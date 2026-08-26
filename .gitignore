@@ -1,0 +1,53 @@
+# ---- Build output ----------------------------------------------------------
+build/
+*.o
+*.d
+*.a
+*.so
+*.dylib
+*.exe
+
+# Binaries built outside build/ (e.g. a stray `g++ program.cpp -o chess`)
+/chess
+/chess-tests
+/a.out
+
+# ---- Debug / profiling artifacts -------------------------------------------
+# Core dumps and sanitizer/profiler leftovers
+core
+core.*
+vgcore.*
+*.log
+perf.data
+perf.data.old
+gmon.out
+callgrind.out.*
+massif.out.*
+
+# gcov / lcov coverage
+*.gcno
+*.gcda
+*.gcov
+coverage/
+*.info
+
+# ---- Tooling ---------------------------------------------------------------
+# clangd's index cache (.clangd and .clang-format themselves stay tracked)
+.cache/
+compile_commands.json
+compile_flags.txt
+
+# ---- Editors / OS ----------------------------------------------------------
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# ---- Engine data -----------------------------------------------------------
+# Opening books, tablebases and engine logs are large and/or generated
+*.bin
+*.rtbw
+*.rtbz
