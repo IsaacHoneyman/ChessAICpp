@@ -1,0 +1,4 @@
+--- Move Gen ---
+Pin-aware legality // computer chekers and pinned pieces
+Make/unmake -> instead of copy 
+Staged generation 

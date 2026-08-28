@@ -22,6 +22,8 @@ struct Board {
     void setPiece(int square, Piece p);
     void removePiece(int square);
 
+    Board makeMove(Move move) const;
+
     // --- Output / Notation ---
 
     void fromFEN(const std::string& fen);

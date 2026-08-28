@@ -34,17 +34,21 @@ else
 endif
 
 BUILD_DIR := build/$(VARIANT)
-SRCS      := $(wildcard *.cpp)
+SRCS      := $(filter-out test.cpp,$(wildcard *.cpp))
 OBJS      := $(SRCS:%.cpp=$(BUILD_DIR)/%.o)
 DEPS      := $(OBJS:.o=.d)
 BIN       := $(BUILD_DIR)/$(TARGET)
+TEST_BIN  := $(BUILD_DIR)/test
+TEST_SRCS := board.cpp movegen.cpp test.cpp
+TEST_OBJS := $(TEST_SRCS:%.cpp=$(BUILD_DIR)/%.test.o)
+TEST_DEPS := $(TEST_OBJS:.o=.d)
 
 # Arguments forwarded to the program by `make run ARGS="..."`.
 ARGS ?=
 
 # ---- Targets ---------------------------------------------------------------
 
-.PHONY: all build run debug release clean help
+.PHONY: all build run test debug release clean help
 
 all: build
 
@@ -54,6 +58,10 @@ build: $(BIN)
 ## run: Build, then run the program (pass ARGS="...")
 run: $(BIN)
 	@./$(BIN) $(ARGS)
+
+## test: Build and run test.cpp
+test: $(TEST_BIN)
+	@./$(TEST_BIN)
 
 ## debug: Build and run at -O2 with asserts, debug info, sanitizers (SAN=0 to skip)
 debug:
@@ -83,7 +91,15 @@ $(BIN): $(OBJS)
 	@echo "  LD   $@"
 	@$(CXX) $(LDFLAGS) $^ -o $@
 
+$(TEST_BIN): $(TEST_OBJS)
+	@echo "  LD   $@"
+	@$(CXX) $(LDFLAGS) $^ -o $@
+
 $(BUILD_DIR)/%.o: %.cpp | $(BUILD_DIR)
+	@echo "  CXX  $<"
+	@$(CXX) $(CXXFLAGS) -MMD -MP -c $< -o $@
+
+$(BUILD_DIR)/%.test.o: %.cpp | $(BUILD_DIR)
 	@echo "  CXX  $<"
 	@$(CXX) $(CXXFLAGS) -MMD -MP -c $< -o $@
 
@@ -91,3 +107,4 @@ $(BUILD_DIR):
 	@mkdir -p $@
 
 -include $(DEPS)
+-include $(TEST_DEPS)
