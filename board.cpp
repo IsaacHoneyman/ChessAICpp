@@ -1,6 +1,7 @@
 #include "board.hpp"
 #include "bitboard.hpp"
 #include "types.hpp"
+#include "zobrist.hpp"
 #include <cassert>
 #include <cctype>
 #include <iostream>
@@ -73,6 +74,8 @@ void Board::fromFEN(const std::string &fen) {
 
     halfMoveClock = uint8_t(half);
     fullMoveNumber = uint16_t(full);
+
+    zobristHash = getZobrist(*this);
 }
 
 std::string Board::toFEN() const {
@@ -145,32 +148,54 @@ void Board::makeMove(Move m, MoveUndo& undo) {
     const Piece p = at(from);
     const PieceColour us = colourOf(p);
 
+    undo.zobristHash = zobristHash;
     undo.captured = (m.flag() == EN_PASSANT)
         ? at(squareOf(fileOf(to), rankOf(from))) : at(to);
     undo.castling = castling;
     undo.epSquare = epSquare;
     undo.halfMoveClock = halfMoveClock;
 
+    if (epSquare != NO_SQUARE) zobristHash ^= ZOBRIST_KEYS.enPassant[fileOf(epSquare)];
+    zobristHash ^= ZOBRIST_KEYS.castling[castling];
+
     removePiece(from);
+    zobristHash ^= ZOBRIST_KEYS.pieces[p][from];
     if (m.isCapture()) {
-        removePiece(m.flag() == EN_PASSANT ? 
-        squareOf(fileOf(to), rankOf(from)) : to);
+        const int capSq = m.flag() == EN_PASSANT ? squareOf(fileOf(to), rankOf(from)) : to;
+        removePiece(capSq);
+        zobristHash ^= ZOBRIST_KEYS.pieces[undo.captured][capSq];
     }
 
-    setPiece(to, m.isPromotion() ? makePiece(us, m.promType()) : p);
+    const Piece placedPiece = m.isPromotion() ? makePiece(us, m.promType()) : p;
+    setPiece(to, placedPiece);
+    zobristHash ^= ZOBRIST_KEYS.pieces[placedPiece][to];
+
     castling = uint8_t(castling & CASTLING_MASKS[from] & CASTLING_MASKS[to]);
 
     if (m.flag() == CASTLE_KING) {
-        int rank = rankOf(from);
+        const int rank = rankOf(from);
+        const Piece rook = makePiece(us, ROOK);
         removePiece(squareOf(7, rank));
-        setPiece(squareOf(5, rank), makePiece(us, ROOK));
+        setPiece(squareOf(5, rank), rook);
+        
+        zobristHash ^= ZOBRIST_KEYS.pieces[rook][squareOf(7, rank)]; 
+        zobristHash ^= ZOBRIST_KEYS.pieces[rook][squareOf(5, rank)]; 
+        
     } else if (m.flag() == CASTLE_QUEEN) {
-        int rank = rankOf(from);
+        const int rank = rankOf(from);
+        const Piece rook = makePiece(us, ROOK);
         removePiece(squareOf(0, rank));
-        setPiece(squareOf(3, rank), makePiece(us, ROOK));
+        setPiece(squareOf(3, rank), rook);
+        
+        zobristHash ^= ZOBRIST_KEYS.pieces[rook][squareOf(0, rank)]; 
+        zobristHash ^= ZOBRIST_KEYS.pieces[rook][squareOf(3, rank)]; 
     }
 
     epSquare = (m.flag() == DOUBLE_PUSH) ? uint8_t((from + to) >> 1) : NO_SQUARE;
+
+    zobristHash ^= ZOBRIST_KEYS.castling[castling & 0x0F]; // Apply new castling state
+    if (epSquare != NO_SQUARE) zobristHash ^= ZOBRIST_KEYS.enPassant[fileOf(epSquare)]; // Apply new EP file
+    zobristHash ^= ZOBRIST_KEYS.toMove; // Toggle the side to move
 
     if (toMove == BLACK) fullMoveNumber++;
     halfMoveClock = (m.isCapture() || typeOf(p) == PAWN) ? 0 : uint8_t(halfMoveClock + 1);
@@ -203,6 +228,7 @@ void Board::unmakeMove(Move m, const MoveUndo& undo) {
         setPiece(squareOf(0, rank), makePiece(us, ROOK));
     }
 
+    zobristHash   = undo.zobristHash;
     castling      = undo.castling;
     epSquare      = undo.epSquare;
     halfMoveClock = undo.halfMoveClock;

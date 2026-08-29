@@ -96,7 +96,7 @@ constexpr uint64_t subsetOf(uint32_t index, uint64_t mask) {
     return subset;
 }
 
-constexpr std::array<Magic, BOARD_SIZE> ROOK_MAGICS = {{
+inline constexpr std::array<Magic, BOARD_SIZE> ROOK_MAGICS = {{
     {0x101010101017eULL, 0x1080004008801020ULL, 0, 52}, {0x202020202027cULL, 0x840092002c03000ULL, 4096, 53},
     {0x404040404047aULL, 0x1900200010400900ULL, 6144, 53}, {0x8080808080876ULL, 0x880100008000480ULL, 8192, 53},
     {0x1010101010106eULL, 0x4200100420080200ULL, 10240, 53}, {0x2020202020205eULL, 0x8100020100080400ULL, 12288, 53},
@@ -131,7 +131,7 @@ constexpr std::array<Magic, BOARD_SIZE> ROOK_MAGICS = {{
     {0x3e40404040404000ULL, 0x888221800813004ULL, 96256, 53}, {0x7e80808080808000ULL, 0x4000002840840112ULL, 98304, 52}
 }};
 
-constexpr std::array<Magic, BOARD_SIZE> BISHOP_MAGICS = {{
+inline constexpr std::array<Magic, BOARD_SIZE> BISHOP_MAGICS = {{
     {0x40201008040200ULL, 0x10102002004a1420ULL, 0, 58}, {0x402010080400ULL, 0x8020040400584008ULL, 64, 59},
     {0x4020100a00ULL, 0x10510800811201c8ULL, 96, 59}, {0x40221400ULL, 0x5204042080000088ULL, 128, 59},
     {0x2442800ULL, 0x2204106880000002ULL, 160, 59}, {0x204085000ULL, 0x1401042004000000ULL, 192, 59},
@@ -189,9 +189,9 @@ inline const auto BISHOP_TABLE = makeTable<5248>(BISHOP_MAGICS, detail::BISHOP_D
 
 // --- Interface ---
 
-constexpr auto KNIGHT_ATTACKS = detail::generateStepAttacks(detail::KNIGHT_DELTAS);
-constexpr auto KING_ATTACKS = detail::generateStepAttacks(detail::KING_DELTAS);
-constexpr std::array<std::array<uint64_t, BOARD_SIZE>, COLOUR_SIZE> PAWN_ATTACKS = {
+inline constexpr auto KNIGHT_ATTACKS = detail::generateStepAttacks(detail::KNIGHT_DELTAS);
+inline constexpr auto KING_ATTACKS = detail::generateStepAttacks(detail::KING_DELTAS);
+inline constexpr std::array<std::array<uint64_t, BOARD_SIZE>, COLOUR_SIZE> PAWN_ATTACKS = {
     detail::generateStepAttacks(detail::W_PAWN_DELTAS),
     detail::generateStepAttacks(detail::B_PAWN_DELTAS)};
 

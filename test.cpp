@@ -5,6 +5,7 @@
 #include "board.hpp"
 #include "movegen.hpp"
 #include "types.hpp"
+#include "zobrist.hpp"
 
 // --- Behaviour Tests ---
 
@@ -12,6 +13,16 @@ static int failures = 0, checked = 0;
 
 uint64_t perft(Board& board, int depth) {
     if (depth == 0) return 1;
+
+    uint64_t scratchHash = getZobrist(board);
+    if (board.zobristHash != scratchHash) {
+        std::cerr << "\nFATAL HASH MISMATCH!\n"
+                  << "Incremental : " << board.zobristHash << '\n'
+                  << "Scratch     : " << scratchHash << '\n'
+                  << "FEN         : " << board.toFEN() << "\n\n";
+        assert(false);
+    }
+
     MoveList moves;
     generateLegal(board, moves);
     if (depth == 1) return moves.size();
@@ -57,6 +68,8 @@ static const PerftCase PERFT_CASES[] = {
 };
 
 void runPerftTests(int maxDepth = 4) { // verifies move gen via comparision in number of moves
+    const auto start = std::chrono::steady_clock::now();
+    uint64_t totalNodes{0};
     for (const PerftCase& tc : PERFT_CASES) {
         Board b;
         b.fromFEN(tc.fen);
@@ -64,6 +77,7 @@ void runPerftTests(int maxDepth = 4) { // verifies move gen via comparision in n
             uint64_t want = tc.expected[d - 1];
             if (want == 0) continue;
             uint64_t got = perft(b, d);
+            totalNodes += got;
             ++checked;
             if (got != want) {
                 std::cout << "FAIL perft(" << d << ")  got " << got
@@ -72,80 +86,14 @@ void runPerftTests(int maxDepth = 4) { // verifies move gen via comparision in n
             }
         }
     }
-}
-
-// --- Speed Tests ---
-
-struct BenchCase {
-    const char* fen;
-    int depth;
-    const char* label;
-};
-
-static const BenchCase BENCH_CASES[] = {
-    {"rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1", 6, "startpos"},
-    {"r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1", 5, "kiwipete"},
-    {"r4rk1/1pp1qppp/p1np1n2/2b1p1B1/2B1P1b1/P1NP1N2/1PP1QPPP/R4RK1 w - - 0 10", 5, "middlegame"},
-};
-
-constexpr int BENCH_REPEATS = 3;
-
-static double timeBest(const BenchCase& bc, uint64_t& nodesOut, double& secondsOut) {
-    double bestMnps = 0;
-    for (int rep = 0; rep < BENCH_REPEATS; ++rep) {
-        Board b;
-        b.fromFEN(bc.fen);
-
-        const auto start = std::chrono::steady_clock::now();
-        const uint64_t nodes = perft(b, bc.depth);
-        const auto end = std::chrono::steady_clock::now();
-        const double seconds = std::chrono::duration<double>(end - start).count();
-
-        const double mnps = nodes / seconds / 1e6;
-        if (mnps > bestMnps) {
-            bestMnps   = mnps;
-            nodesOut   = nodes;
-            secondsOut = seconds;
-        }
-    }
-    return bestMnps;
-}
-
-void runBenchmark() {
-    // warmup: first pass touches the magic tables cold and trains the
-    {
-        Board b;
-        b.fromFEN(BENCH_CASES[0].fen);
-        perft(b, 4);
-    }
-
-    uint64_t totalNodes = 0;
-    double totalSeconds = 0;
-
-    for (const BenchCase& bc : BENCH_CASES) {
-        uint64_t nodes = 0;
-        double seconds = 0;
-        const double mnps = timeBest(bc, nodes, seconds);
-
-        totalNodes += nodes;
-        totalSeconds += seconds;
-
-        std::printf("  %-12s depth %d  %11llu nodes  %7.3fs  %6.2f Mnps\n",
-                    bc.label, bc.depth, (unsigned long long)nodes, seconds, mnps);
-    }
-
-    std::printf("  %-12s %8s  %11llu nodes  %7.3fs  %6.2f Mnps\n",
-                "TOTAL", "", (unsigned long long)totalNodes, totalSeconds,
-                totalNodes / totalSeconds / 1e6);
+    const auto end = std::chrono::steady_clock::now();
+    const double seconds = std::chrono::duration<double>(end - start).count();
+    std::cout << std::format("{:6.2f} Mnps\n", totalNodes / seconds / 1e6);
 }
 
 int main() {
     runPerftTests(4);
     std::cout << checked << " checks, " << failures << " failed\n";
-
-    std::cout << "benchmark:\n";
-    runBenchmark();
-
 
     return failures != 0;
 }

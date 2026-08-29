@@ -39,7 +39,7 @@ OBJS      := $(SRCS:%.cpp=$(BUILD_DIR)/%.o)
 DEPS      := $(OBJS:.o=.d)
 BIN       := $(BUILD_DIR)/$(TARGET)
 TEST_BIN  := $(BUILD_DIR)/test
-TEST_SRCS := board.cpp movegen.cpp test.cpp
+TEST_SRCS := board.cpp movegen.cpp zobrist.cpp test.cpp
 TEST_OBJS := $(TEST_SRCS:%.cpp=$(BUILD_DIR)/%.test.o)
 TEST_DEPS := $(TEST_OBJS:.o=.d)
 

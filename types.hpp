@@ -20,6 +20,12 @@ enum Piece : uint8_t { // represented eeee cttt
     B_PAWN = 9, B_KNIGHT, B_BISHOP, B_ROOK, B_QUEEN, B_KING,
 };
 
+// easy indexing of pieces
+constexpr std::array<Piece, 12> PIECE_LOOKUP = {
+    W_PAWN, W_KNIGHT, W_BISHOP, W_ROOK, W_QUEEN, W_KING,
+    B_PAWN, B_KNIGHT, B_BISHOP, B_ROOK, B_QUEEN, B_KING
+};
+
 constexpr Piece makePiece(PieceColour pc, PieceType pt) { return Piece((pc << 3) | pt); }
 constexpr PieceType typeOf(Piece p) { return PieceType(p & 7); }
 constexpr PieceColour colourOf(Piece p) { return PieceColour(p >> 3); }
@@ -80,6 +86,7 @@ struct MoveUndo {
     uint8_t castling;
     uint8_t epSquare;
     uint8_t halfMoveClock;
+    uint64_t zobristHash;
 };
 
 constexpr Move encodeMove(int from, int to, MoveFlag f) {
@@ -100,4 +107,4 @@ constexpr std::array<uint8_t, BOARD_SIZE> makeCastlingMasks() {
     return m;
 }
 
-constexpr auto CASTLING_MASKS = makeCastlingMasks();
+inline constexpr auto CASTLING_MASKS = makeCastlingMasks();
