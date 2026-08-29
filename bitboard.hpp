@@ -6,8 +6,8 @@
 #include <iostream>
 
 constexpr uint64_t squareBB(int square) { return 1ULL << square; }
-constexpr int fileOf(int square) { return square & 7; }
-constexpr int rankOf(int square) { return square >> 3; }
+constexpr int fileOf(int square) { return square & 7; } // x
+constexpr int rankOf(int square) { return square >> 3; } // y
 constexpr int squareOf(int file, int rank) { return rank * 8 + file; }
 constexpr bool onBoard(int square) { return square >= 0 && square < BOARD_SIZE; }
 constexpr bool onBoard(int file, int rank) { return rank >= 0 && rank < RANK_COUNT && file >= 0 && file < FILE_COUNT; }

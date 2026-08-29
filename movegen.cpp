@@ -26,18 +26,47 @@ struct GenContext {
     {}
 };
 
+// Enemy pieces currently giving check.
+uint64_t computeCheckers(const Board& b, PieceColour us, int kingSq) {
+    const uint64_t occ = b.occupied();
+    return b.byColour[other(us)] & (
+        (b.byType[PAWN]   & PAWN_ATTACKS[us][kingSq]) |
+        (b.byType[KNIGHT] & KNIGHT_ATTACKS[kingSq])   |
+        ((b.byType[BISHOP] | b.byType[QUEEN]) & bishopAttacks(kingSq, occ)) |
+        ((b.byType[ROOK]   | b.byType[QUEEN]) & rookAttacks(kingSq, occ)));
+}
+
+// Our pieces sitting alone between our king and an enemy slider.
+uint64_t computePinned(const Board& b, PieceColour us, int kingSq) {
+    const uint64_t occ  = b.occupied();
+    const uint64_t them = b.byColour[other(us)];
+
+    uint64_t snipers = them & (
+        ((b.byType[ROOK]   | b.byType[QUEEN]) & rookAttacks(kingSq, 0)) |
+        ((b.byType[BISHOP] | b.byType[QUEEN]) & bishopAttacks(kingSq, 0)));
+
+    uint64_t pinned = 0;
+    while (snipers) {
+        const int sq = popLsb(snipers);
+        const uint64_t blockers = BETWEEN[kingSq][sq] & occ;
+        if (popCount(blockers) == 1)
+            pinned |= blockers & b.byColour[us]; 
+    }
+    return pinned;
+}
+
 bool inCheck(const Board& board, PieceColour mover) {
     return isAttacked(board, lsb(board.pieces(mover, KING)), other(mover));
 }
 
 void addPawnMove(MoveList& moves, int from, int to, bool capture, int promoRank) {
     if (rankOf(to) == promoRank) {
-        moves.push_back(makeMove(from, to, capture ? PROM_KNIGHT_CAP : PROM_KNIGHT));
-        moves.push_back(makeMove(from, to, capture ? PROM_BISHOP_CAP : PROM_BISHOP));
-        moves.push_back(makeMove(from, to, capture ? PROM_ROOK_CAP   : PROM_ROOK));
-        moves.push_back(makeMove(from, to, capture ? PROM_QUEEN_CAP  : PROM_QUEEN));
+        moves.push_back(encodeMove(from, to, capture ? PROM_KNIGHT_CAP : PROM_KNIGHT));
+        moves.push_back(encodeMove(from, to, capture ? PROM_BISHOP_CAP : PROM_BISHOP));
+        moves.push_back(encodeMove(from, to, capture ? PROM_ROOK_CAP   : PROM_ROOK));
+        moves.push_back(encodeMove(from, to, capture ? PROM_QUEEN_CAP  : PROM_QUEEN));
     } else {
-        moves.push_back(makeMove(from, to, capture ? CAPTURE : QUIET));
+        moves.push_back(encodeMove(from, to, capture ? CAPTURE : QUIET));
     }
 }
 
@@ -57,7 +86,7 @@ void generatePawnMoves(const GenContext& c, MoveList& moves) {
             if (rankOf(from) == startRank) {
                 int two = one + forward;
                 if (!(c.occupied & squareBB(two)))
-                    moves.push_back(makeMove(from, two, DOUBLE_PUSH));
+                    moves.push_back(encodeMove(from, two, DOUBLE_PUSH));
             }
         }
 
@@ -68,7 +97,7 @@ void generatePawnMoves(const GenContext& c, MoveList& moves) {
             addPawnMove(moves, from, to, true, promoRank);
         }
         if (c.board.epSquare != NO_SQUARE && (attacks & squareBB(c.board.epSquare)))
-            moves.push_back(makeMove(from, c.board.epSquare, EN_PASSANT));
+            moves.push_back(encodeMove(from, c.board.epSquare, EN_PASSANT));
     }
 }
 
@@ -79,7 +108,7 @@ void generateKnightMoves(const GenContext& c, MoveList& moves) {
         uint64_t targets = KNIGHT_ATTACKS[from] & c.notOurs;
         while (targets) {
             int to = popLsb(targets);
-            moves.push_back(makeMove(from, to,
+            moves.push_back(encodeMove(from, to,
                 (c.theirs & squareBB(to)) ? CAPTURE : QUIET));
         }
     }
@@ -90,7 +119,7 @@ void generateKingMoves(const GenContext& c, MoveList& moves) {
     uint64_t targets = KING_ATTACKS[from] & c.notOurs;
     while (targets) {
         int to = popLsb(targets);
-        moves.push_back(makeMove(from, to,
+        moves.push_back(encodeMove(from, to,
             (c.theirs & squareBB(to)) ? CAPTURE : QUIET));
     }
 
@@ -108,7 +137,7 @@ void generateKingMoves(const GenContext& c, MoveList& moves) {
         const bool pathSafe = !isAttacked(c.board, f, c.them)
                            && !isAttacked(c.board, g, c.them);
         if (empty && pathSafe)
-            moves.push_back(makeMove(from, g, CASTLE_KING));
+            moves.push_back(encodeMove(from, g, CASTLE_KING));
     }
 
     if (c.board.castling & queenRight) {
@@ -117,7 +146,7 @@ void generateKingMoves(const GenContext& c, MoveList& moves) {
         const bool pathSafe = !isAttacked(c.board, d, c.them)
                            && !isAttacked(c.board, cc, c.them);
         if (empty && pathSafe)
-            moves.push_back(makeMove(from, cc, CASTLE_QUEEN));
+            moves.push_back(encodeMove(from, cc, CASTLE_QUEEN));
     }
     
 }
@@ -129,7 +158,7 @@ void generateSliderMoves(const GenContext& c, MoveList& moves) {
         uint64_t targets = bishopAttacks(from, c.occupied) & c.notOurs;
         while (targets) {
             int to = popLsb(targets);
-            moves.push_back(makeMove(from, to,
+            moves.push_back(encodeMove(from, to,
                 (c.theirs & squareBB(to)) ? CAPTURE : QUIET));
         }
     }
@@ -140,7 +169,7 @@ void generateSliderMoves(const GenContext& c, MoveList& moves) {
         uint64_t targets = rookAttacks(from, c.occupied) & c.notOurs;
         while (targets) {
             int to = popLsb(targets);
-            moves.push_back(makeMove(from, to,
+            moves.push_back(encodeMove(from, to,
                 (c.theirs & squareBB(to)) ? CAPTURE : QUIET));
         }
     }
@@ -157,12 +186,29 @@ void generatePseudoLegal(const Board& board, MoveList& moves) {
     generateKnightMoves(c, moves);
 }
 
-void generateLegal(const Board& board, MoveList& moves) {
+void generateLegal(Board& board, MoveList& moves) {
+    moves.count = 0;
     MoveList pseudo;
     generatePseudoLegal(board, pseudo);
+
+    const PieceColour us = board.toMove;
+    const int kingSq = lsb(board.pieces(us, KING));
+    const uint64_t checkers = computeCheckers(board, us, kingSq);
+    const uint64_t pinned   = computePinned(board, us, kingSq);
+
+    MoveUndo undo;
     for (Move m : pseudo) {
-        Board next = board.makeMove(m);
-        if (!inCheck(next, board.toMove))
+        const bool mustVerify = 
+        checkers || m.from() == kingSq || m.flag() == EN_PASSANT || (pinned & squareBB(m.from()));
+
+        if (!mustVerify) {
             moves.push_back(m);
+            continue;
+        }
+
+        board.makeMove(m, undo);
+        if (!inCheck(board, us))
+            moves.push_back(m);
+        board.unmakeMove(m, undo);
     }
 }

@@ -46,6 +46,12 @@ TEST_DEPS := $(TEST_OBJS:.o=.d)
 # Arguments forwarded to the program by `make run ARGS="..."`.
 ARGS ?=
 
+# Pin the test binary to one fixed core so timings are comparable between runs
+# (no migration between cores, warm caches).  Override with `make test TEST_CPU=n`;
+# TEST_CPU= (empty) disables pinning, as does a system without taskset.
+TEST_CPU ?= 2
+TASKSET  := $(if $(and $(TEST_CPU),$(shell command -v taskset 2>/dev/null)),taskset -c $(TEST_CPU))
+
 # ---- Targets ---------------------------------------------------------------
 
 .PHONY: all build run test debug release clean help
@@ -59,9 +65,9 @@ build: $(BIN)
 run: $(BIN)
 	@./$(BIN) $(ARGS)
 
-## test: Build and run test.cpp
+## test: Build and run test.cpp (pinned to core TEST_CPU)
 test: $(TEST_BIN)
-	@./$(TEST_BIN)
+	@$(TASKSET) ./$(TEST_BIN)
 
 ## debug: Build and run at -O2 with asserts, debug info, sanitizers (SAN=0 to skip)
 debug:
@@ -78,12 +84,12 @@ clean:
 
 ## help: Show this message
 help:
-	@echo "Usage: make [target] [BUILD=debug|release] [SAN=0|1] [ARGS=\"...\"]"
+	@echo "Usage: make [target] [BUILD=debug|release] [SAN=0|1] [TEST_CPU=n] [ARGS=\"...\"]"
 	@echo
 	@echo "Targets:"
 	@sed -n 's/^## \([a-z]*\): \(.*\)/  \1\t\2/p' $(MAKEFILE_LIST) | expand -t 12
 	@echo
-	@echo "Current: BUILD=$(BUILD)  SAN=$(SAN)  ->  $(BIN)"
+	@echo "Current: BUILD=$(BUILD)  SAN=$(SAN)  TEST_CPU=$(TEST_CPU)  ->  $(BIN)"
 
 # ---- Rules -----------------------------------------------------------------
 

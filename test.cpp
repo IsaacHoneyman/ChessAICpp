@@ -10,14 +10,18 @@
 
 static int failures = 0, checked = 0;
 
-uint64_t perft(const Board& board, int depth) {
+uint64_t perft(Board& board, int depth) {
     if (depth == 0) return 1;
     MoveList moves;
     generateLegal(board, moves);
     if (depth == 1) return moves.size();
     uint64_t nodes = 0;
-    for (Move m : moves)
-        nodes += perft(board.makeMove(m), depth - 1);
+    MoveUndo undo;
+    for (Move m : moves) {
+        board.makeMove(m, undo);
+        nodes += perft(board, depth - 1);
+        board.unmakeMove(m, undo);
+    }
     return nodes;
 }
 
@@ -79,16 +83,16 @@ struct BenchCase {
 };
 
 static const BenchCase BENCH_CASES[] = {
-    {"rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1", 5, "startpos"},
-    {"r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1", 4, "kiwipete"},
-    {"r4rk1/1pp1qppp/p1np1n2/2b1p1B1/2B1P1b1/P1NP1N2/1PP1QPPP/R4RK1 w - - 0 10", 4, "middlegame"},
+    {"rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1", 6, "startpos"},
+    {"r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1", 5, "kiwipete"},
+    {"r4rk1/1pp1qppp/p1np1n2/2b1p1B1/2B1P1b1/P1NP1N2/1PP1QPPP/R4RK1 w - - 0 10", 5, "middlegame"},
 };
 
-void runBenchmark() {
-    uint64_t totalNodes = 0;
-    double totalSeconds = 0;
+constexpr int BENCH_REPEATS = 3;
 
-    for (const BenchCase& bc : BENCH_CASES) {
+static double timeBest(const BenchCase& bc, uint64_t& nodesOut, double& secondsOut) {
+    double bestMnps = 0;
+    for (int rep = 0; rep < BENCH_REPEATS; ++rep) {
         Board b;
         b.fromFEN(bc.fen);
 
@@ -97,15 +101,40 @@ void runBenchmark() {
         const auto end = std::chrono::steady_clock::now();
         const double seconds = std::chrono::duration<double>(end - start).count();
 
+        const double mnps = nodes / seconds / 1e6;
+        if (mnps > bestMnps) {
+            bestMnps   = mnps;
+            nodesOut   = nodes;
+            secondsOut = seconds;
+        }
+    }
+    return bestMnps;
+}
+
+void runBenchmark() {
+    // warmup: first pass touches the magic tables cold and trains the
+    {
+        Board b;
+        b.fromFEN(BENCH_CASES[0].fen);
+        perft(b, 4);
+    }
+
+    uint64_t totalNodes = 0;
+    double totalSeconds = 0;
+
+    for (const BenchCase& bc : BENCH_CASES) {
+        uint64_t nodes = 0;
+        double seconds = 0;
+        const double mnps = timeBest(bc, nodes, seconds);
+
         totalNodes += nodes;
         totalSeconds += seconds;
 
-        std::printf("  %-12s depth %d  %10llu nodes  %7.3fs  %6.2f Mnps\n",
-                    bc.label, bc.depth, (unsigned long long)nodes, seconds,
-                    nodes / seconds / 1e6);
+        std::printf("  %-12s depth %d  %11llu nodes  %7.3fs  %6.2f Mnps\n",
+                    bc.label, bc.depth, (unsigned long long)nodes, seconds, mnps);
     }
 
-    std::printf("  %-12s %8s  %10llu nodes  %7.3fs  %6.2f Mnps\n",
+    std::printf("  %-12s %8s  %11llu nodes  %7.3fs  %6.2f Mnps\n",
                 "TOTAL", "", (unsigned long long)totalNodes, totalSeconds,
                 totalNodes / totalSeconds / 1e6);
 }

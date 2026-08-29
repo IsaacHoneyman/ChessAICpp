@@ -1,4 +1,4 @@
 --- Move Gen ---
-Pin-aware legality // computer chekers and pinned pieces
-Make/unmake -> instead of copy 
-Staged generation 
+skip second move list and generate in space
+checkers used properly instead of as a bool + free checkmate detection
+pinned rays instead of make/unmake for pinned piecesstaged generationbulk pawn generation

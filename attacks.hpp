@@ -51,6 +51,25 @@ constexpr uint64_t slidingAttacks(int sq, uint64_t occ, const int (&deltas)[4][2
     }
     return out;
 }
+
+// BETWEEN[a][b] = squares strictly between a and b when they share a rank,
+// file or diagonal; 0 otherwise. Used to find the blockers on a pin ray.
+inline std::array<std::array<uint64_t, BOARD_SIZE>, BOARD_SIZE> makeBetween() {
+    std::array<std::array<uint64_t, BOARD_SIZE>, BOARD_SIZE> out{};
+    for (int a = 0; a < BOARD_SIZE; ++a) {
+        for (int b = 0; b < BOARD_SIZE; ++b) {
+            if (a == b) continue;
+            if (detail::slidingAttacks(a, 0, detail::ROOK_DELTAS) & squareBB(b))
+                out[a][b] = detail::slidingAttacks(a, squareBB(b), detail::ROOK_DELTAS)
+                          & detail::slidingAttacks(b, squareBB(a), detail::ROOK_DELTAS);
+            else if (detail::slidingAttacks(a, 0, detail::BISHOP_DELTAS) & squareBB(b))
+                out[a][b] = detail::slidingAttacks(a, squareBB(b), detail::BISHOP_DELTAS)
+                          & detail::slidingAttacks(b, squareBB(a), detail::BISHOP_DELTAS);
+        }
+    }
+    return out;
+}
+
 } // namespace detail
 
 namespace magic {
@@ -180,13 +199,17 @@ inline uint64_t rookAttacks(int square, uint64_t occupancy) {
     const auto& magic = magic::ROOK_MAGICS[square];
     return magic::ROOK_TABLE[magic.offset + magic.index(occupancy)];
 }
+
 inline uint64_t bishopAttacks(int square, uint64_t occupancy) {
     const auto& magic = magic::BISHOP_MAGICS[square];
     return magic::BISHOP_TABLE[magic.offset + magic.index(occupancy)];
 }
+
 inline uint64_t queenAttacks(int square, uint64_t occupancy) {
     return rookAttacks(square, occupancy) | bishopAttacks(square, occupancy);
 }
+
+inline const auto BETWEEN = detail::makeBetween();
 
 inline bool isAttacked(const Board& board, int square, PieceColour by, uint64_t occupancy) {
     return board.byColour[by] & (

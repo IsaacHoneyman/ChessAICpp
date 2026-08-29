@@ -140,36 +140,70 @@ void Board::printBoard() const {
     std::cerr << "\n   a b c d e f g h\n\nFEN: " << toFEN() << "\n\n";
 }
 
-Board Board::makeMove(Move m) const {
-    Board next = *this; // copy
-    Piece p = at(m.from());
+void Board::makeMove(Move m, MoveUndo& undo) {
+    const int from = m.from(), to = m.to();
+    const Piece p = at(from);
+    const PieceColour us = colourOf(p);
 
-    next.removePiece(m.from());
+    undo.captured = (m.flag() == EN_PASSANT)
+        ? at(squareOf(fileOf(to), rankOf(from))) : at(to);
+    undo.castling = castling;
+    undo.epSquare = epSquare;
+    undo.halfMoveClock = halfMoveClock;
 
+    removePiece(from);
     if (m.isCapture()) {
-        next.removePiece(m.flag() == EN_PASSANT ? squareOf(fileOf(m.to()), rankOf(m.from()))
-                                                : m.to());
+        removePiece(m.flag() == EN_PASSANT ? 
+        squareOf(fileOf(to), rankOf(from)) : to);
     }
 
-    next.setPiece(m.to(), m.isPromotion() ? makePiece(next.toMove, m.promType()) : p);
-    next.castling &= CASTLING_MASKS[m.from()] & CASTLING_MASKS[m.to()];
+    setPiece(to, m.isPromotion() ? makePiece(us, m.promType()) : p);
+    castling = uint8_t(castling & CASTLING_MASKS[from] & CASTLING_MASKS[to]);
 
     if (m.flag() == CASTLE_KING) {
-        int rank = rankOf(m.from());
-        next.removePiece(squareOf(7, rank));
-        next.setPiece(squareOf(5, rank), makePiece(colourOf(p), ROOK));
+        int rank = rankOf(from);
+        removePiece(squareOf(7, rank));
+        setPiece(squareOf(5, rank), makePiece(us, ROOK));
     } else if (m.flag() == CASTLE_QUEEN) {
-        int rank = rankOf(m.from());
-        next.removePiece(squareOf(0, rank));
-        next.setPiece(squareOf(3, rank), makePiece(colourOf(p), ROOK));
+        int rank = rankOf(from);
+        removePiece(squareOf(0, rank));
+        setPiece(squareOf(3, rank), makePiece(us, ROOK));
     }
 
-    next.epSquare = (m.flag() == DOUBLE_PUSH) ? uint8_t((m.from() + m.to()) >> 1) : NO_SQUARE;
+    epSquare = (m.flag() == DOUBLE_PUSH) ? uint8_t((from + to) >> 1) : NO_SQUARE;
 
-    next.toMove = other(toMove);
-    if (toMove == BLACK)
-        next.fullMoveNumber++;
-    next.halfMoveClock = (m.isCapture() || typeOf(p) == PAWN) ? 0 : uint8_t(next.halfMoveClock + 1);
+    if (toMove == BLACK) fullMoveNumber++;
+    halfMoveClock = (m.isCapture() || typeOf(p) == PAWN) ? 0 : uint8_t(halfMoveClock + 1);
+    toMove = other(toMove);
+}
 
-    return next;
+void Board::unmakeMove(Move m, const MoveUndo& undo) {
+    const int from = m.from(), to = m.to();
+
+    toMove = other(toMove);
+    const PieceColour us = toMove;
+    if (toMove == BLACK) fullMoveNumber--;
+
+    const Piece moved = m.isPromotion() ? makePiece(us, PAWN) : at(to);
+    removePiece(to);
+    setPiece(from, moved);
+
+    if (m.isCapture()) {
+        if (m.flag() == EN_PASSANT) setPiece(squareOf(fileOf(to), rankOf(from)), undo.captured);
+        else setPiece(to, undo.captured);
+    }
+
+    if (m.flag() == CASTLE_KING) {
+        const int rank = rankOf(from);
+        removePiece(squareOf(5, rank));
+        setPiece(squareOf(7, rank), makePiece(us, ROOK));
+    } else if (m.flag() == CASTLE_QUEEN) {
+        const int rank = rankOf(from);
+        removePiece(squareOf(3, rank));
+        setPiece(squareOf(0, rank), makePiece(us, ROOK));
+    }
+
+    castling      = undo.castling;
+    epSquare      = undo.epSquare;
+    halfMoveClock = undo.halfMoveClock;
 }

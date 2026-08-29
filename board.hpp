@@ -22,7 +22,8 @@ struct Board {
     void setPiece(int square, Piece p);
     void removePiece(int square);
 
-    Board makeMove(Move move) const;
+    void makeMove(Move m, MoveUndo& undo);
+    void unmakeMove(Move m, const MoveUndo& undo);
 
     // --- Output / Notation ---
 

@@ -75,7 +75,14 @@ struct Move {
     constexpr bool operator==(const Move&) const = default;
 };
 
-constexpr Move makeMove(int from, int to, MoveFlag f) {
+struct MoveUndo {
+    Piece captured;
+    uint8_t castling;
+    uint8_t epSquare;
+    uint8_t halfMoveClock;
+};
+
+constexpr Move encodeMove(int from, int to, MoveFlag f) {
     return Move{ uint16_t(from | (to << 6) | (f << 12)) };
 }
 

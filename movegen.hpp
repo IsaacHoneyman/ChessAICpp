@@ -12,5 +12,6 @@ struct MoveList {
     int size() const { return count; }
 };
 
-void generateLegal(const Board& board, MoveList& moves);
+void generatePseudoLegal(const Board& board, MoveList& moves);
+void generateLegal(Board& board, MoveList& moves);
 
