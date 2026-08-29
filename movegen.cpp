@@ -1,6 +1,7 @@
 #include "movegen.hpp"
 #include "attacks.hpp"
 #include "bitboard.hpp"
+#include "history.hpp"
 #include "types.hpp"
 #include <cstdint>
 
@@ -53,10 +54,6 @@ uint64_t computePinned(const Board& b, PieceColour us, int kingSq) {
             pinned |= blockers & b.byColour[us]; 
     }
     return pinned;
-}
-
-bool inCheck(const Board& board, PieceColour mover) {
-    return isAttacked(board, lsb(board.pieces(mover, KING)), other(mover));
 }
 
 void addPawnMove(MoveList& moves, int from, int to, bool capture, int promoRank) {
@@ -175,7 +172,39 @@ void generateSliderMoves(const GenContext& c, MoveList& moves) {
     }
 }
 
+bool insufficientMaterial(const Board& board) {
+    const int pieces = popCount(board.occupied());
+    if (pieces > 4) return false;
+
+    if (board.byType[PAWN] | board.byType[ROOK] | board.byType[QUEEN]) return false;
+
+    if (pieces <= 3) return true;  // KK, or KK plus one minor
+
+    // Four pieces: two kings and two others. Insufficient only if both are
+    // bishops on the same colour square.
+    const uint64_t bishops = board.byType[BISHOP];
+    if (popCount(bishops) != 2) return false;
+
+    return (bishops & LIGHT_SQUARES) == bishops    // both light
+        || (bishops & LIGHT_SQUARES) == 0;         // both dark
+}
+
 }  // namespace
+
+bool inCheck(const Board& board, PieceColour mover) {
+    return isAttacked(board, lsb(board.pieces(mover, KING)), other(mover));
+}
+
+GameState getState(const Board& board, const MoveList& moves, const PositionHistory& history) {
+    if (moves.size() == 0) {
+        return inCheck(board, board.toMove) ? GameState::CHECKMATE : GameState::STALEMATE;
+    }
+
+    if (insufficientMaterial(board)) return GameState::INSUFFICIENT;
+    if (history.isDoubleRepetition(board.zobristHash, board.halfMoveClock)) return GameState::REPETITION;
+
+    return board.halfMoveClock >= 100 ? GameState::FIFTYMOVE : GameState::ONGOING;
+}
 
 // all legal moves, ignores if king in check
 void generatePseudoLegal(const Board& board, MoveList& moves) {
@@ -211,4 +240,6 @@ void generateLegal(Board& board, MoveList& moves) {
             moves.push_back(m);
         board.unmakeMove(m, undo);
     }
+
+
 }

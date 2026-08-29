@@ -1,5 +1,4 @@
 #pragma once
-#include "board.hpp"
 #include "types.hpp"
 #include <array>
 #include <cstdint>
@@ -34,7 +33,7 @@ constexpr Zobrist generateZobrist() {
         }
     }
 
-    std::array<uint64_t, 4> castlingRights;
+    std::array<uint64_t, 4> castlingRights{};
     for (int i = 0; i < 4; ++i) castlingRights[i] = nextRandom(state);
     for (int i = 0; i < 16; ++i) {
         uint64_t comp{0ULL};
@@ -56,4 +55,5 @@ constexpr Zobrist generateZobrist() {
 inline constexpr detail::Zobrist ZOBRIST_KEYS = detail::generateZobrist();
 
 // used when grabbing from FEN, so not in hotpath and hence not inlined
+struct Board;
 uint64_t getZobrist(const Board &board);

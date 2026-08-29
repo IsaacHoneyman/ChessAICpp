@@ -40,6 +40,9 @@ constexpr uint64_t FILE_F = FILE_A << 5;
 constexpr uint64_t FILE_G = FILE_A << 6;
 constexpr uint64_t FILE_H = FILE_A << 7;
 
+constexpr uint64_t LIGHT_SQUARES = 0x55AA55AA55AA55AAULL;
+constexpr uint64_t DARK_SQUARES  = ~LIGHT_SQUARES;
+
 inline void printBitboard(uint64_t bb) {
     for (int rank = 7; rank >= 0; --rank) {
         std::cerr << (rank + 1) << "  ";

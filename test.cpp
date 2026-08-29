@@ -2,6 +2,7 @@
 #include <cstdio>
 #include <iostream>
 #include <string>
+#include "bitboard.hpp"
 #include "board.hpp"
 #include "movegen.hpp"
 #include "types.hpp"
@@ -9,20 +10,12 @@
 
 // --- Behaviour Tests ---
 
+namespace {
+
 static int failures = 0, checked = 0;
 
 uint64_t perft(Board& board, int depth) {
     if (depth == 0) return 1;
-
-    uint64_t scratchHash = getZobrist(board);
-    if (board.zobristHash != scratchHash) {
-        std::cerr << "\nFATAL HASH MISMATCH!\n"
-                  << "Incremental : " << board.zobristHash << '\n'
-                  << "Scratch     : " << scratchHash << '\n'
-                  << "FEN         : " << board.toFEN() << "\n\n";
-        assert(false);
-    }
-
     MoveList moves;
     generateLegal(board, moves);
     if (depth == 1) return moves.size();
@@ -91,7 +84,90 @@ void runPerftTests(int maxDepth = 4) { // verifies move gen via comparision in n
     std::cout << std::format("{:6.2f} Mnps\n", totalNodes / seconds / 1e6);
 }
 
+void playMoves(Board& b, std::initializer_list<Move> moves) {
+    MoveUndo undo;
+    for (Move m : moves) b.makeMove(m, undo);
+}
+
+void expectHash(uint64_t got, uint64_t want, const char* what) {
+    ++checked;
+    if (got != want) {
+        std::cout << "FAIL " << what << "\n  got  " << got << "\n  want " << want << '\n';
+        ++failures;
+    }
+}
+
+void runZobristTest() {
+    const char* START = PERFT_CASES[0].fen;
+
+    constexpr int B1 = squareOf(1, 0), C3 = squareOf(2, 2), G1 = squareOf(6, 0), F3 = squareOf(5, 2);
+    constexpr int B8 = squareOf(1, 7), C6 = squareOf(2, 5), G8 = squareOf(6, 7), F6 = squareOf(5, 5);
+    constexpr int E2 = squareOf(4, 1), E4 = squareOf(4, 3);
+
+    // --- path independence ---
+    // Two different knight shuffles, both returning to the exact start position.
+    Board viaKing; viaKing.fromFEN(START);
+    playMoves(viaKing, {encodeMove(G1, F3, QUIET), encodeMove(G8, F6, QUIET),
+                        encodeMove(F3, G1, QUIET), encodeMove(F6, G8, QUIET)});
+
+    Board viaQueen; viaQueen.fromFEN(START);
+    playMoves(viaQueen, {encodeMove(B1, C3, QUIET), encodeMove(B8, C6, QUIET),
+                         encodeMove(C3, B1, QUIET), encodeMove(C6, B8, QUIET)});
+
+    expectHash(viaKing.zobristHash, viaQueen.zobristHash, "path independence: two shuffles");
+
+    // Both must also equal a fresh start position, or they're consistently wrong together.
+    Board fresh; fresh.fromFEN(START);
+    expectHash(viaKing.zobristHash, fresh.zobristHash, "shuffle returns to start hash");
+
+    // --- ep canonicalisation ---
+    // e2e4 from the start: no black pawn can capture on e3, so no ep square.
+    Board pushed; pushed.fromFEN(START);
+    playMoves(pushed, {encodeMove(E2, E4, DOUBLE_PUSH)});
+    ++checked;
+    if (pushed.epSquare != NO_SQUARE) {
+        std::cout << "FAIL ep set with no capturer: " << pushed.toFEN() << '\n';
+        ++failures;
+    }
+
+    // Same push with a black pawn on d4, which can capture on e3 — ep must be set.
+    Board capturable;
+    capturable.fromFEN("rnbqkbnr/pppp1ppp/8/8/3p4/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
+    playMoves(capturable, {encodeMove(E2, E4, DOUBLE_PUSH)});
+    ++checked;
+    if (capturable.epSquare == NO_SQUARE) {
+        std::cout << "FAIL ep cleared with capturer present: " << capturable.toFEN() << '\n';
+        ++failures;
+    }
+    expectHash(capturable.zobristHash, getZobrist(capturable), "ep: incremental vs scratch");
+
+    // --- FEN round trip ---
+    Board reloaded; reloaded.fromFEN(capturable.toFEN());
+    expectHash(reloaded.zobristHash, capturable.zobristHash, "FEN round trip with ep set");
+
+    // --- make/unmake round trip ---
+    Board b; b.fromFEN(START);
+    const uint64_t before = b.zobristHash;
+    MoveList moves;
+    generateLegal(b, moves);
+    MoveUndo undo;
+    bool ok = true;
+    for (Move m : moves) {
+        b.makeMove(m, undo);
+        b.unmakeMove(m, undo);
+        if (b.zobristHash != before) ok = false;
+    }
+    ++checked;
+    if (!ok) {
+        std::cout << "FAIL make/unmake round trip from startpos\n";
+        ++failures;
+    }
+}
+
+}
+
 int main() {
+    runZobristTest();
     runPerftTests(4);
     std::cout << checked << " checks, " << failures << " failed\n";
 

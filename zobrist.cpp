@@ -1,5 +1,6 @@
 #include "bitboard.hpp"
 #include "types.hpp"
+#include "board.hpp"
 #include "zobrist.hpp"
 #include <cstdint>
 

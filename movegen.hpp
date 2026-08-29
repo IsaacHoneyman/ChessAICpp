@@ -1,5 +1,6 @@
 #pragma once
 #include "board.hpp"
+#include "history.hpp"
 #include "types.hpp"
 #include <cassert>
 
@@ -12,6 +13,10 @@ struct MoveList {
     int size() const { return count; }
 };
 
+enum class GameState { ONGOING, CHECKMATE, STALEMATE, FIFTYMOVE, INSUFFICIENT, REPETITION };
+
 void generatePseudoLegal(const Board& board, MoveList& moves);
 void generateLegal(Board& board, MoveList& moves);
 
+bool inCheck(const Board& board, PieceColour mover);
+GameState getState(const Board& board, const MoveList& moves, const PositionHistory& history);

@@ -1,12 +1,23 @@
 #include "board.hpp"
 #include "bitboard.hpp"
 #include "types.hpp"
+#include "attacks.hpp"
 #include "zobrist.hpp"
 #include <cassert>
 #include <cctype>
+#include <cstdint>
 #include <iostream>
 #include <sstream>
 #include <string>
+
+namespace {
+
+bool epCaptureAvailable(const Board& b, int epSq, PieceColour capturer) {
+    const uint64_t theirPawns = b.byType[PAWN] & b.byColour[capturer];
+    return PAWN_ATTACKS[other(capturer)][epSq] & theirPawns;
+}
+
+}
 
 void Board::setPiece(int square, Piece p) {
     assert(p != NO_PIECE);
@@ -71,6 +82,9 @@ void Board::fromFEN(const std::string &fen) {
 
     if (ep != "-")
         epSquare = uint8_t(squareOf(ep[0] - 'a', ep[1] - '1'));
+
+    if (epSquare != NO_SQUARE && !epCaptureAvailable(*this, epSquare, toMove))
+        epSquare = NO_SQUARE;
 
     halfMoveClock = uint8_t(half);
     fullMoveNumber = uint16_t(full);
@@ -143,6 +157,8 @@ void Board::printBoard() const {
     std::cerr << "\n   a b c d e f g h\n\nFEN: " << toFEN() << "\n\n";
 }
 
+// --- Moves ---
+
 void Board::makeMove(Move m, MoveUndo& undo) {
     const int from = m.from(), to = m.to();
     const Piece p = at(from);
@@ -191,9 +207,13 @@ void Board::makeMove(Move m, MoveUndo& undo) {
         zobristHash ^= ZOBRIST_KEYS.pieces[rook][squareOf(3, rank)]; 
     }
 
-    epSquare = (m.flag() == DOUBLE_PUSH) ? uint8_t((from + to) >> 1) : NO_SQUARE;
+    epSquare = NO_SQUARE;
+    if (m.flag() == DOUBLE_PUSH) {
+        const uint8_t candidate = uint8_t((from + to) >> 1);
+        if (epCaptureAvailable(*this, candidate, other(us))) epSquare = candidate;
+    }
 
-    zobristHash ^= ZOBRIST_KEYS.castling[castling & 0x0F]; // Apply new castling state
+    zobristHash ^= ZOBRIST_KEYS.castling[castling]; // Apply new castling state
     if (epSquare != NO_SQUARE) zobristHash ^= ZOBRIST_KEYS.enPassant[fileOf(epSquare)]; // Apply new EP file
     zobristHash ^= ZOBRIST_KEYS.toMove; // Toggle the side to move
 
