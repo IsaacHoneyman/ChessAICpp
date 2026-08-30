@@ -46,6 +46,8 @@ bool isDraw(const Game& g, int ply) {
 
 int Searcher::quiesce(Game& g, int alpha, int beta, int ply, int qply) {
     ++nodes;
+    ++qnodes;
+    if (ply > seldepth) seldepth = ply;
     if (outOfTime()) return 0; // discard iteration
 
     const bool ic = inCheck(g.board, g.board.toMove);
@@ -90,6 +92,7 @@ int Searcher::quiesce(Game& g, int alpha, int beta, int ply, int qply) {
 
 int Searcher::negamax(Game& g, int depth, int ply, int alpha, int beta) {
     ++nodes;
+    if (ply > seldepth) seldepth = ply;
     if (outOfTime()) return 0; // discard iteration
 
     if (isDraw(g, ply)) return 0;
@@ -115,7 +118,11 @@ int Searcher::negamax(Game& g, int depth, int ply, int alpha, int beta) {
 
         if (score > best) best = score;
         if (score > alpha) alpha = score;
-        if (alpha >= beta) break; // opponent had better option
+        if (alpha >= beta) { // opponent had better option
+            ++cutoffs;
+            if (i == 0) ++firstCutoffs; // best move was tried first: good ordering
+            break;
+        }
     }
     return best;
     
@@ -123,6 +130,15 @@ int Searcher::negamax(Game& g, int depth, int ply, int alpha, int beta) {
 
 int64_t Searcher::msSince(Clock::time_point t) const {
     return std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now() - t).count();
+}
+
+void Searcher::fillStats(SearchResult& r) {
+    r.nodes = nodes;
+    r.qnodes = qnodes;
+    r.cutoffs = cutoffs;
+    r.firstCutoffs = firstCutoffs;
+    r.seldepth = seldepth;
+    r.ms = msSince(start);
 }
 
 bool Searcher::outOfTime() {
@@ -168,6 +184,10 @@ SearchResult Searcher::searchRoot(Game& g, int depth) {
 
 SearchResult Searcher::search(Game& g, const MoveList& root, SearchLimits lim) {
     nodes = 0;
+    qnodes = 0;
+    cutoffs = 0;
+    firstCutoffs = 0;
+    seldepth = 0;
     stopped = false;
     limits = lim;
     start = Clock::now();
@@ -187,6 +207,11 @@ SearchResult Searcher::search(Game& g, const MoveList& root, SearchLimits lim) {
         best = r;
         prevBest = r.move;
  
+        if (limits.onIteration) {
+            fillStats(best);
+            limits.onIteration(best);
+        }
+ 
         if (isMateScore(r.score)) break;  // more depth won't change a forced mate
  
         if (limits.softMs > 0) {
@@ -195,7 +220,7 @@ SearchResult Searcher::search(Game& g, const MoveList& root, SearchLimits lim) {
         }
     }
  
-    best.nodes = nodes;
+    fillStats(best);
     return best;
 }
 
