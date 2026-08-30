@@ -39,6 +39,7 @@ constexpr uint8_t NO_SQUARE = 64;
 constexpr int BOARD_SIZE = 64;
 constexpr int FILE_COUNT = 8;
 constexpr int RANK_COUNT = 8;
+static constexpr int MAX_SEARCH_PLY = 128;
 
 // --- FEN / Format ---
 
@@ -87,6 +88,7 @@ struct MoveUndo {
     uint8_t epSquare;
     uint8_t halfMoveClock;
     uint64_t zobristHash;
+    int32_t pstScore;
 };
 
 constexpr Move encodeMove(int from, int to, MoveFlag f) {

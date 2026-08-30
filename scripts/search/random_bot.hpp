@@ -12,7 +12,7 @@ struct RandomBot : Bot {
         return r;
     }
 
-    std::string name() const override { return "RandomBot"; }
+    std::string name() const override { return "Random Bot"; }
 
 private:
     std::mt19937 rng;

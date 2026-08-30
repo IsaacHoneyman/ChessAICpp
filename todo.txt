@@ -2,3 +2,11 @@
 skip second move list and generate in space
 checkers used properly instead of as a bool + free checkmate detection
 pinned rays instead of make/unmake for pinned piecesstaged generationbulk pawn generation
+
+--- Evaluation ---
+Second table and transition between
+
+--- Search ---
+Transposition table
+Killer moves 
+History heuristic

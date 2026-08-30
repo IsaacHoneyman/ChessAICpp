@@ -4,6 +4,7 @@
 #include <string>
 #include "bitboard.hpp"
 #include "board.hpp"
+#include "eval.hpp"
 #include "movegen.hpp"
 #include "types.hpp"
 #include "zobrist.hpp"
@@ -164,11 +165,125 @@ void runZobristTest() {
     }
 }
 
+void expectInt(int got, int want, const std::string& what) {
+    ++checked;
+    if (got != want) {
+        std::cout << "FAIL " << what << "\n  got  " << got << "\n  want " << want << '\n';
+        ++failures;
+    }
 }
+ 
+std::string mirrorFEN(const std::string& fen) {
+    std::istringstream ss(fen);
+    std::string placement, side, castle, ep;
+    int half = 0, full = 1;
+    ss >> placement >> side >> castle >> ep >> half >> full;
+ 
+    std::vector<std::string> ranks;
+    for (size_t start = 0, p; ; start = p + 1) {
+        p = placement.find('/', start);
+        ranks.push_back(placement.substr(start, p - start));
+        if (p == std::string::npos) break;
+    }
+    std::string flipped;
+    for (auto it = ranks.rbegin(); it != ranks.rend(); ++it) {
+        if (!flipped.empty()) flipped += '/';
+        for (char c : *it)
+            flipped += std::isalpha(static_cast<unsigned char>(c))
+                     ? char(std::islower(static_cast<unsigned char>(c)) ? std::toupper(c)
+                                                                       : std::tolower(c))
+                     : c;
+    }
+ 
+    std::string newCastle;
+    for (char c : castle)
+        newCastle += std::isalpha(static_cast<unsigned char>(c))
+                   ? char(std::islower(static_cast<unsigned char>(c)) ? std::toupper(c)
+                                                                     : std::tolower(c))
+                   : c;
+ 
+    std::string newEp = ep;
+    if (ep != "-") newEp = std::string(1, ep[0]) + char('1' + (7 - (ep[1] - '1')));
+ 
+    return flipped + ' ' + (side == "w" ? "b" : "w") + ' ' + newCastle + ' ' + newEp
+         + ' ' + std::to_string(half) + ' ' + std::to_string(full);
+}
+ 
+// Walks the subtree checking that everything maintained incrementally still
+// matches a from-scratch recomputation. Returns a description of the first
+// position that disagrees, or an empty string if the whole subtree is clean.
+std::string findDrift(Board& b, int depth) {
+    if (b.zobristHash != getZobrist(b))
+        return "zobrist drift: " + b.toFEN();
+    if (b.pstScore != evaluateFromScratch(b))
+        return "pstScore drift: " + b.toFEN()
+             + " (incremental " + std::to_string(b.pstScore)
+             + ", scratch " + std::to_string(evaluateFromScratch(b)) + ')';
+    if (depth == 0) return {};
+
+    MoveList moves;
+    generateLegal(b, moves);
+    MoveUndo undo;
+    for (const Move m : moves) {
+        b.makeMove(m, undo);
+        const std::string drift = findDrift(b, depth - 1);
+        b.unmakeMove(m, undo);
+        if (!drift.empty()) return drift;
+    }
+    return {};
+}
+
+void expectConsistentSubtree(const std::string& fen, int depth) {
+    ++checked;
+    Board b; b.fromFEN(fen);
+    const std::string drift = findDrift(b, depth);
+    if (!drift.empty()) {
+        std::cout << "FAIL incremental state under " << fen << "\n  " << drift << '\n';
+        ++failures;
+    }
+}
+ 
+void runPstTests() {
+    expectInt(PST[W_PAWN][squareOf(4, 1)], 80,  "white pawn e2 (blocks bishop)");
+    expectInt(PST[W_PAWN][squareOf(4, 3)], 120, "white pawn e4 (centre)");
+    expectInt(PST[W_PAWN][squareOf(4, 6)], 150, "white pawn e7 (near promotion)");
+    expectInt(PST[W_KNIGHT][squareOf(0, 0)], 270, "white knight a1 (corner)");
+    expectInt(PST[W_KNIGHT][squareOf(3, 3)], 340, "white knight d4 (centre)");
+    expectInt(PST[W_KING][squareOf(6, 0)], 30,  "white king g1 (castled)");
+    expectInt(PST[W_KING][squareOf(4, 3)], -40, "white king e4 (exposed)");
+    expectInt(PST[B_PAWN][squareOf(4, 4)], -120, "black pawn e5 (centre)");
+    expectInt(PST[B_KING][squareOf(6, 7)], -30,  "black king g8 (castled)");
+ 
+    int asym = 0;
+    for (const PieceType pt : {PAWN, KNIGHT, BISHOP, ROOK, QUEEN, KING})
+        for (int sq = 0; sq < BOARD_SIZE; ++sq)
+            if (PST[makePiece(WHITE, pt)][sq] != -PST[makePiece(BLACK, pt)][sq ^ 56]) ++asym;
+    expectInt(asym, 0, "PST colour symmetry");
+ 
+    int nonZero = 0;
+    for (int sq = 0; sq < BOARD_SIZE; ++sq)
+        for (const int p : {0, 7, 8}) if (PST[p][sq] != 0) ++nonZero;
+    expectInt(nonZero, 0, "unused Piece slots are zero");
+ 
+    Board start; start.fromFEN(PERFT_CASES[0].fen);
+    expectInt(start.pstScore, 0, "startpos scores 0");
+ 
+    for (const PerftCase& tc : PERFT_CASES) {
+        Board a; a.fromFEN(tc.fen);
+        Board m; m.fromFEN(mirrorFEN(tc.fen));
+        expectInt(m.pstScore, -a.pstScore, "mirror negates score: " + tc.fen);
+        expectInt(evaluate(m), evaluate(a), "mirror preserves evaluate(): " + tc.fen);
+    }
+ 
+    for (const PerftCase& tc : PERFT_CASES) expectConsistentSubtree(tc.fen, 3);
+}
+
+} // namespace
 
 int main() {
     runZobristTest();
     runPerftTests(4);
+    runPstTests();
     std::cout << checked << " checks, " << failures << " failed\n";
 
     return failures != 0;

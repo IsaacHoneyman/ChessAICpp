@@ -1,9 +1,9 @@
 #pragma once
+#include "types.hpp"
 #include <cassert>
 #include <cstdint>
 
 struct PositionHistory {
-    static constexpr int MAX_SEARCH_PLY = 128;
     static constexpr int MAX_HISTORY =
         100 + MAX_SEARCH_PLY; // we only track since last capture or pawn push
 

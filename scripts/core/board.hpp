@@ -15,6 +15,8 @@ struct Board {
     uint16_t fullMoveNumber; 
     PieceColour toMove;
 
+    int32_t pstScore;
+
     uint64_t occupied() const { return byColour[WHITE] | byColour[BLACK]; }
     uint64_t pieces(PieceColour c, PieceType pt) const { return byColour[c] & byType[pt]; }
     Piece at(int square) const { return Piece(mailbox[square]); }
