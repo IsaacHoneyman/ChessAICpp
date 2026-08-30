@@ -2,115 +2,84 @@
 
 TARGET   := chess
 CXX      := g++
-CXXFLAGS := -std=c++20 -Wall -Wextra -Wpedantic
+CXXFLAGS := -std=c++20 -O2 -DNDEBUG -Wall -Wextra -Wpedantic
 LDFLAGS  :=
 
-# Build configuration: release (default) or debug.  Override on the command
-# line, e.g. `make BUILD=debug run`.
-BUILD    ?= release
+SRC_DIR   := scripts
+BUILD_DIR := build
 
-# Sanitizers in debug builds.  Disable with `make debug SAN=0` when you want
-# full speed (asan costs roughly 2x).
-SAN      ?= 1
+# Every scripts/ subdirectory is on the include path, so sources keep using
+# flat includes ("board.hpp") regardless of which folder they live in.
+INCLUDES := $(addprefix -I,$(sort $(dir $(wildcard $(SRC_DIR)/*/))))
+CXXFLAGS += $(INCLUDES)
 
-# Suffix keeps sanitized and unsanitized objects in separate trees, so
-# toggling SAN rebuilds correctly instead of reusing stale objects.
-VARIANT  := $(BUILD)
+# The same flags, minus the build-only ones, for clangd (see the `flags` rule).
+CLANGD_FLAGS := -std=c++20 -Wall -Wextra -Wpedantic $(INCLUDES)
 
-ifeq ($(BUILD),debug)
-    # Optimized like release, but asserts stay live (no -DNDEBUG) and we keep
-    # full debug info.  -fno-omit-frame-pointer keeps stack traces readable.
-    CXXFLAGS += -O2 -g3 -fno-omit-frame-pointer -DDEBUG
-    ifneq ($(SAN),0)
-        CXXFLAGS += -fsanitize=address,undefined
-        LDFLAGS  += -fsanitize=address,undefined
-    else
-        VARIANT := debug-nosan
-    endif
-else ifeq ($(BUILD),release)
-    CXXFLAGS += -O2 -DNDEBUG
-else
-    $(error Unknown BUILD '$(BUILD)'; expected 'debug' or 'release')
-endif
+# Shared engine code: everything under scripts/ except the entry points in
+# scripts/app/, which each provide their own main().
+MAIN_SRC := $(SRC_DIR)/app/driver.cpp
+TEST_SRC := $(SRC_DIR)/app/test.cpp
+LIB_SRCS := $(filter-out $(MAIN_SRC) $(TEST_SRC),$(shell find $(SRC_DIR) -name '*.cpp'))
 
-BUILD_DIR := build/$(VARIANT)
-SRCS      := $(filter-out test.cpp,$(wildcard *.cpp))
-OBJS      := $(SRCS:%.cpp=$(BUILD_DIR)/%.o)
-DEPS      := $(OBJS:.o=.d)
-BIN       := $(BUILD_DIR)/$(TARGET)
-TEST_BIN  := $(BUILD_DIR)/test
-TEST_SRCS := board.cpp movegen.cpp zobrist.cpp test.cpp
-TEST_OBJS := $(TEST_SRCS:%.cpp=$(BUILD_DIR)/%.test.o)
-TEST_DEPS := $(TEST_OBJS:.o=.d)
+obj = $(patsubst $(SRC_DIR)/%.cpp,$(BUILD_DIR)/%.o,$(1))
 
-# Arguments forwarded to the program by `make run ARGS="..."`.
-ARGS ?=
+LIB_OBJS  := $(call obj,$(LIB_SRCS))
+MAIN_OBJ  := $(call obj,$(MAIN_SRC))
+TEST_OBJ  := $(call obj,$(TEST_SRC))
+DEPS      := $(LIB_OBJS:.o=.d) $(MAIN_OBJ:.o=.d) $(TEST_OBJ:.o=.d)
 
-# Pin the test binary to one fixed core so timings are comparable between runs
-# (no migration between cores, warm caches).  Override with `make test TEST_CPU=n`;
-# TEST_CPU= (empty) disables pinning, as does a system without taskset.
-TEST_CPU ?= 2
-TASKSET  := $(if $(and $(TEST_CPU),$(shell command -v taskset 2>/dev/null)),taskset -c $(TEST_CPU))
+BIN      := $(BUILD_DIR)/$(TARGET)
+TEST_BIN := $(BUILD_DIR)/test
 
 # ---- Targets ---------------------------------------------------------------
 
-.PHONY: all build run test debug release clean help
+.PHONY: build run test flags clean help
 
-all: build
+## build: Compile the release build
+build: compile_flags.txt $(BIN)
 
-## build: Compile the project (BUILD=debug|release)
-build: $(BIN)
-
-## run: Build, then run the program (pass ARGS="...")
+## run: Compile and run the release build (args: make run ARGS="rh")
 run: $(BIN)
 	@./$(BIN) $(ARGS)
 
-## test: Build and run test.cpp (pinned to core TEST_CPU)
-test: $(TEST_BIN)
-	@$(TASKSET) ./$(TEST_BIN)
+## test: Compile and run the tests (scripts/app/test.cpp)
+test: compile_flags.txt $(TEST_BIN)
+	@./$(TEST_BIN)
 
-## debug: Build and run at -O2 with asserts, debug info, sanitizers (SAN=0 to skip)
-debug:
-	@$(MAKE) --no-print-directory BUILD=debug run
-
-## release: Build and run optimized (-O2)
-release:
-	@$(MAKE) --no-print-directory BUILD=release run
+## flags: Regenerate compile_flags.txt so clangd sees every scripts/ folder
+flags: compile_flags.txt
 
 ## clean: Remove all build artifacts
 clean:
-	@rm -rf build
-	@echo "Removed build/"
+	@rm -rf $(BUILD_DIR)
+	@echo "Removed $(BUILD_DIR)/"
 
 ## help: Show this message
 help:
-	@echo "Usage: make [target] [BUILD=debug|release] [SAN=0|1] [TEST_CPU=n] [ARGS=\"...\"]"
+	@echo "Usage: make [target]"
 	@echo
-	@echo "Targets:"
-	@sed -n 's/^## \([a-z]*\): \(.*\)/  \1\t\2/p' $(MAKEFILE_LIST) | expand -t 12
-	@echo
-	@echo "Current: BUILD=$(BUILD)  SAN=$(SAN)  TEST_CPU=$(TEST_CPU)  ->  $(BIN)"
+	@sed -n 's/^## \([a-z]*\): \(.*\)/  \1\t\2/p' $(MAKEFILE_LIST) | expand -t 10
 
 # ---- Rules -----------------------------------------------------------------
 
-$(BIN): $(OBJS)
+$(BIN): $(LIB_OBJS) $(MAIN_OBJ)
 	@echo "  LD   $@"
 	@$(CXX) $(LDFLAGS) $^ -o $@
 
-$(TEST_BIN): $(TEST_OBJS)
+$(TEST_BIN): $(LIB_OBJS) $(TEST_OBJ)
 	@echo "  LD   $@"
 	@$(CXX) $(LDFLAGS) $^ -o $@
 
-$(BUILD_DIR)/%.o: %.cpp | $(BUILD_DIR)
+# scripts/ changes mtime whenever a subdirectory is added or removed, so the
+# clangd include path refreshes itself the moment a new folder appears.
+compile_flags.txt: $(SRC_DIR) Makefile
+	@echo "  GEN  $@"
+	@printf '%s\n' $(CLANGD_FLAGS) > $@
+
+$(BUILD_DIR)/%.o: $(SRC_DIR)/%.cpp
+	@mkdir -p $(dir $@)
 	@echo "  CXX  $<"
 	@$(CXX) $(CXXFLAGS) -MMD -MP -c $< -o $@
-
-$(BUILD_DIR)/%.test.o: %.cpp | $(BUILD_DIR)
-	@echo "  CXX  $<"
-	@$(CXX) $(CXXFLAGS) -MMD -MP -c $< -o $@
-
-$(BUILD_DIR):
-	@mkdir -p $@
 
 -include $(DEPS)
--include $(TEST_DEPS)

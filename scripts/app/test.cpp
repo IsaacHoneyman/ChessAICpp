@@ -30,7 +30,7 @@ uint64_t perft(Board& board, int depth) {
 }
 
 struct PerftCase {
-    const char* fen;
+    const std::string fen;
     uint64_t expected[6];   // depths 1..6, 0 means "don't test"
 };
 
@@ -89,7 +89,7 @@ void playMoves(Board& b, std::initializer_list<Move> moves) {
     for (Move m : moves) b.makeMove(m, undo);
 }
 
-void expectHash(uint64_t got, uint64_t want, const char* what) {
+void expectHash(uint64_t got, uint64_t want, const std::string& what) {
     ++checked;
     if (got != want) {
         std::cout << "FAIL " << what << "\n  got  " << got << "\n  want " << want << '\n';
@@ -98,7 +98,7 @@ void expectHash(uint64_t got, uint64_t want, const char* what) {
 }
 
 void runZobristTest() {
-    const char* START = PERFT_CASES[0].fen;
+    const std::string START = PERFT_CASES[0].fen;
 
     constexpr int B1 = squareOf(1, 0), C3 = squareOf(2, 2), G1 = squareOf(6, 0), F3 = squareOf(5, 2);
     constexpr int B8 = squareOf(1, 7), C6 = squareOf(2, 5), G8 = squareOf(6, 7), F6 = squareOf(5, 5);

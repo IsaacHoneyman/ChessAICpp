@@ -14,8 +14,9 @@ build/
 
 # ---- Debug / profiling artifacts -------------------------------------------
 # Core dumps and sanitizer/profiler leftovers
-core
-core.*
+# (anchored to the repo root so source dirs named `core` aren't ignored)
+/core
+/core.[0-9]*
 vgcore.*
 *.log
 perf.data
@@ -32,10 +33,9 @@ coverage/
 *.info
 
 # ---- Tooling ---------------------------------------------------------------
-# clangd's index cache (.clangd and .clang-format themselves stay tracked)
+# clangd's index cache (compile_flags.txt and .clang-format themselves stay tracked)
 .cache/
 compile_commands.json
-compile_flags.txt
 
 # ---- Editors / OS ----------------------------------------------------------
 .vscode/

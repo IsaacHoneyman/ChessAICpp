@@ -10,6 +10,8 @@ struct MoveList {
     void push_back(Move m) { assert(count < 256); moves[count++] = m; }
     Move* begin() { return moves; }
     Move* end() { return moves + count; }
+    const Move* begin() const { return moves; }
+    const Move* end() const { return moves + count; }
     int size() const { return count; }
 };
 
