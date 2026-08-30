@@ -33,12 +33,12 @@ std::unique_ptr<Bot> makeBot(char c) {
 } // namespace
 
 int main(int argc, char** argv) {
-    // No args -> a game of human white v random black.
+    // No args -> UCI on stdin/stdout, which is what a GUI expects, since
+    // that is how a GUI launches the engine.
     //   ./chess hr   human white, random black
     //   ./chess rh   random white, human black
     //   ./chess rr   self-play      ./chess hh  both human
-    //   ./chess uci  UCI on stdin/stdout, which is what a GUI expects.
-    const std::string mode = (argc > 1) ? argv[1] : "hr";
+    const std::string mode = (argc > 1) ? argv[1] : "uci";
     if (mode == "uci") {
         RandomBot bot;
         uciLoop(bot);

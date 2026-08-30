@@ -5,8 +5,16 @@ CXX      := g++
 CXXFLAGS := -std=c++20 -O2 -DNDEBUG -Wall -Wextra -Wpedantic
 LDFLAGS  :=
 
+# Mode passed to the binary by `make run`. UCI is the default so a bare
+# `make run` speaks the protocol a GUI (or the lichess bridge) expects;
+# override for a local game: make run ARGS="hr"
+ARGS     ?= uci
+
 SRC_DIR   := scripts
 BUILD_DIR := build
+
+# Where `make deploy` drops the engine for lichess-bot to launch.
+DEPLOY_BIN := $(HOME)/Desktop/C++/lichess-bot/engines/cerabot
 
 # Every scripts/ subdirectory is on the include path, so sources keep using
 # flat includes ("board.hpp") regardless of which folder they live in.
@@ -34,14 +42,20 @@ TEST_BIN := $(BUILD_DIR)/test
 
 # ---- Targets ---------------------------------------------------------------
 
-.PHONY: build run test flags clean help
+.PHONY: build run deploy test flags clean help
 
 ## build: Compile the release build
 build: compile_flags.txt $(BIN)
 
-## run: Compile and run the release build (args: make run ARGS="rh")
+## run: Compile and run the release build in UCI mode (override: make run ARGS="rh")
 run: $(BIN)
 	@./$(BIN) $(ARGS)
+
+## deploy: Build, then install the engine into lichess-bot/engines/
+deploy: build
+	@mkdir -p $(dir $(DEPLOY_BIN))
+	@cp $(BIN) $(DEPLOY_BIN)
+	@echo "  CP   $(BIN) -> $(DEPLOY_BIN)"
 
 ## test: Compile and run the tests (scripts/app/test.cpp)
 test: compile_flags.txt $(TEST_BIN)
