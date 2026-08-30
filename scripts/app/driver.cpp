@@ -8,11 +8,12 @@
 #include <chrono>
 #include <cstdlib>
 #include <iostream>
+#include <optional>
 #include <string>
 
 namespace {
 
-constexpr int SEARCH_DEPTH = 4;
+constexpr int SEARCH_DEPTH = 5;
 constexpr int DEFAULT_GAMES = 10;
 
 using Clock = std::chrono::steady_clock;
@@ -64,7 +65,7 @@ Outcome playGame(std::array<Bot*, COLOUR_SIZE>& players, bool verbose) {
         Bot& bot = *players[side];
 
         const auto start = Clock::now();
-        const SearchResult r = bot.pick(g, legal);
+        const SearchResult r = bot.pick(g, legal, std::nullopt);
         const std::chrono::duration<double> elapsed = Clock::now() - start;
 
         if (r.move == NO_MOVE) {  // a bot with legal moves should never do this

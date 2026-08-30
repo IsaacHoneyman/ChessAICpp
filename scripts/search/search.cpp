@@ -2,6 +2,8 @@
 #include "eval.hpp"
 #include "movegen.hpp"
 #include "types.hpp"
+#include <chrono>
+#include <climits>
 #include <utility>
 
 namespace {
@@ -44,6 +46,7 @@ bool isDraw(const Game& g, int ply) {
 
 int Searcher::quiesce(Game& g, int alpha, int beta, int ply, int qply) {
     ++nodes;
+    if (outOfTime()) return 0; // discard iteration
 
     const bool ic = inCheck(g.board, g.board.toMove);
     if (!ic) { // assume capture can be declined 
@@ -87,6 +90,7 @@ int Searcher::quiesce(Game& g, int alpha, int beta, int ply, int qply) {
 
 int Searcher::negamax(Game& g, int depth, int ply, int alpha, int beta) {
     ++nodes;
+    if (outOfTime()) return 0; // discard iteration
 
     if (isDraw(g, ply)) return 0;
     if (depth <= 0) return quiesce(g, alpha, beta, ply, 1);
@@ -117,42 +121,82 @@ int Searcher::negamax(Game& g, int depth, int ply, int alpha, int beta) {
     
 }
 
-SearchResult Searcher::search(Game& g, const MoveList& root, int depth) {
-    nodes = 0;
-    if (root.size() == 0) return {};
+int64_t Searcher::msSince(Clock::time_point t) const {
+    return std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now() - t).count();
+}
 
-    MoveList moves = root; // seperate as we need to remember move that produced score
+bool Searcher::outOfTime() {
+    if (stopped) return true;
+    if (limits.hardMs <= 0) return false;
+    if ((nodes & 4095) != 0) return false; // infrequent checks
+    if (msSince(start) >= limits.hardMs) stopped = true;
+    return stopped;
+}
+
+SearchResult Searcher::searchRoot(Game& g, int depth) {
     int scores[256];
-    for (int i = 0; i < moves.size(); ++i) scores[i] = moveScore(g.board, moves.moves[i]);
-
+    for (int i = 0; i < rootMoves.size(); ++i) {
+        scores[i] = moveScore(g.board, rootMoves.moves[i]);
+        if (rootMoves.moves[i] == prevBest) scores[i] = INT_MAX; // marked as best will cut down alpha & beta
+    }
+    
     SearchResult r;
-    r.move = moves.moves[0];
+    r.move = rootMoves.moves[0];
     r.depth = depth;
-
+ 
     int alpha = -INF;
     MoveUndo undo;
-
-    for (int i = 0; i < moves.size(); ++i) {
-        pickNext(moves, scores, i);
-        const Move m = moves.moves[i];
-
+ 
+    for (int i = 0; i < rootMoves.size(); ++i) {
+        pickNext(rootMoves, scores, i);
+        const Move m = rootMoves.moves[i];
+ 
         g.makeMove(m, undo);
         const int score = -negamax(g, depth - 1, 1, -INF, -alpha);
         g.undoMove(m, undo);
-
+ 
+        if (stopped) break;  // incomplete iteration, caller discards it
+ 
         if (i == 0 || score > alpha) {
             alpha = score;
             r.move = m;
             r.score = score;
         }
     }
-
-    r.nodes = nodes;
     return r;
 }
 
-void Searcher::clear() {
-    // nothing to be done yet
+SearchResult Searcher::search(Game& g, const MoveList& root, SearchLimits lim) {
+    nodes = 0;
+    stopped = false;
+    limits = lim;
+    start = Clock::now();
+    prevBest = NO_MOVE;
+    rootMoves = root;
+ 
+    SearchResult best;
+    if (root.size() == 0) return best;  // mated or stalemated
+    best.move = rootMoves.moves[0];
+ 
+    for (int d = 1; d <= limits.maxDepth; ++d) {
+        const auto iterStart = Clock::now();
+        const SearchResult r = searchRoot(g, d);
+ 
+        if (stopped) break;  // keep the last fully completed depth
+ 
+        best = r;
+        prevBest = r.move;
+ 
+        if (isMateScore(r.score)) break;  // more depth won't change a forced mate
+ 
+        if (limits.softMs > 0) {
+            const int64_t iterMs = msSince(iterStart);
+            if (msSince(start) + iterMs * 3 >= limits.softMs) break;
+        }
+    }
+ 
+    best.nodes = nodes;
+    return best;
 }
 
 

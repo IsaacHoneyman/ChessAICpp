@@ -10,3 +10,8 @@ Second table and transition between
 Transposition table
 Killer moves 
 History heuristic
+
+--- Dynamic Iteration ---
+Best move changed at the last iteration → extend the soft limit
+Score dropped sharply from the previous depth → extend
+Same move best for four iterations → stop early and bank the time
