@@ -154,5 +154,4 @@ inline constexpr int TOTAL_PHASE = detail::TOTAL_PHASE;
 
 struct Board;
 
-int evaluateFromScratch(const Board& board);
 int evaluate(const Board& board);
