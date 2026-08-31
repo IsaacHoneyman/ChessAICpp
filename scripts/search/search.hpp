@@ -48,7 +48,7 @@ private:
     using Clock = std::chrono::steady_clock;
 
     SearchResult searchRoot(Game& g, int depth);
-    int negamax(Game&, int depth, int ply, int alpha, int beta);
+    int negamax(Game&, int depth, int ply, int alpha, int beta, bool allowNmp = true);
     int quiesce(Game&, int alpha, int beta, int ply, int qply);
     void ageHistory();
 

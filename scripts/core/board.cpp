@@ -308,3 +308,22 @@ void Board::unmakeMove(Move m, const MoveUndo& undo) {
     pstScore = undo.pstScore;
     gamePhase = undo.gamePhase;
 }
+
+void Board::makeNullMove(MoveUndo& undo) {
+    undo.zobristHash = zobristHash;
+    undo.epSquare = epSquare;
+
+    if (epSquare != NO_SQUARE) { 
+        zobristHash ^= ZOBRIST_KEYS.enPassant[fileOf(epSquare)];
+        epSquare = NO_SQUARE;
+    }
+
+    toMove = other(toMove);
+    zobristHash ^= ZOBRIST_KEYS.toMove;
+}
+
+void Board::unmakeNullMove(const MoveUndo& undo) {
+    toMove = other(toMove);
+    zobristHash = undo.zobristHash;
+    epSquare = undo.epSquare;
+}

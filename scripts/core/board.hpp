@@ -29,6 +29,9 @@ struct Board {
     void makeMove(Move m, MoveUndo& undo);
     void unmakeMove(Move m, const MoveUndo& undo);
 
+    void makeNullMove(MoveUndo& undo); // pass move to opponent
+    void unmakeNullMove(const MoveUndo& undo);
+
     // --- Output / Notation ---
 
     void fromFEN(const std::string& fen);
