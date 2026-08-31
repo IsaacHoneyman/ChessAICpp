@@ -5,23 +5,6 @@ CXX      := g++
 CXXFLAGS := -std=c++20 -O2 -DNDEBUG -Wall -Wextra -Wpedantic
 LDFLAGS  :=
 
-# Mode passed to the binary by `make run`. UCI is the default so a bare
-# `make run` speaks the protocol a GUI (or the lichess bridge) expects.
-# Anything typed after `run` is forwarded to the binary verbatim, so
-# `make run hr` and `make run ARGS="hr"` are equivalent.
-ARGS     ?= uci
-
-# Words following `run` on the command line are the program's arguments, not
-# make goals. Capture them, then give each a do-nothing rule so make does not
-# try (and fail) to build a target named after them.
-ifeq (run,$(firstword $(MAKECMDGOALS)))
-  RUN_ARGS := $(wordlist 2,$(words $(MAKECMDGOALS)),$(MAKECMDGOALS))
-  ifneq ($(RUN_ARGS),)
-    ARGS := $(RUN_ARGS)
-    $(eval $(RUN_ARGS):;@:)
-  endif
-endif
-
 SRC_DIR   := scripts
 BUILD_DIR := build
 
@@ -38,7 +21,7 @@ CLANGD_FLAGS := -std=c++20 -Wall -Wextra -Wpedantic $(INCLUDES)
 
 # Shared engine code: everything under scripts/ except the entry points in
 # scripts/app/, which each provide their own main().
-MAIN_SRC := $(SRC_DIR)/app/driver.cpp
+MAIN_SRC := $(SRC_DIR)/app/uci.cpp
 TEST_SRC := $(SRC_DIR)/app/test.cpp
 LIB_SRCS := $(filter-out $(MAIN_SRC) $(TEST_SRC),$(shell find $(SRC_DIR) -name '*.cpp'))
 
@@ -59,9 +42,9 @@ TEST_BIN := $(BUILD_DIR)/test
 ## build: Compile the release build
 build: compile_flags.txt $(BIN)
 
-## run: Compile and run the release build; extra words are passed along (make run hr)
+## run: Compile and run the release build (speaks UCI on stdin/stdout)
 run: $(BIN)
-	@./$(BIN) $(ARGS)
+	@./$(BIN)
 
 ## deploy: Build, then install the engine into lichess-bot/engines/
 deploy: build
@@ -83,8 +66,7 @@ clean:
 
 ## help: Show this message
 help:
-	@echo "Usage: make [target] [args...]"
-	@echo "  args after 'run' go straight to the binary, e.g. make run hr"
+	@echo "Usage: make [target]"
 	@echo
 	@sed -n 's/^## \([a-z]*\): \(.*\)/  \1\t\2/p' $(MAKEFILE_LIST) | expand -t 10
 

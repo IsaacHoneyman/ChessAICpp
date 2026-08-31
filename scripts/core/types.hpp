@@ -41,6 +41,11 @@ constexpr int FILE_COUNT = 8;
 constexpr int RANK_COUNT = 8;
 static constexpr int MAX_SEARCH_PLY = 128;
 
+inline constexpr int MATE = 30000; // mate given this value (treat kinda like infinity)
+inline constexpr int MATE_THRESHOLD = MATE - MAX_SEARCH_PLY;
+inline constexpr int INF = 32000;
+constexpr bool isMateScore(int s) { return s > MATE_THRESHOLD || s < -MATE_THRESHOLD; }
+
 // --- FEN / Format ---
 
 constexpr char FEN_CHARS[] = " PNBRQK  pnbrqk";

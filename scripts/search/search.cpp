@@ -143,9 +143,9 @@ void Searcher::fillStats(SearchResult& r) {
 
 bool Searcher::outOfTime() {
     if (stopped) return true;
-    if (limits.hardMs <= 0) return false;
-    if ((nodes & 4095) != 0) return false; // infrequent checks
-    if (msSince(start) >= limits.hardMs) stopped = true;
+    if (!limits.hardMs) return false;
+    if ((nodes & 1023) != 0) return false; // infrequent checks
+    if (msSince(start) >= *limits.hardMs) stopped = true;
     return stopped;
 }
 
@@ -214,9 +214,9 @@ SearchResult Searcher::search(Game& g, const MoveList& root, SearchLimits lim) {
  
         if (isMateScore(r.score)) break;  // more depth won't change a forced mate
  
-        if (limits.softMs > 0) {
+        if (limits.softMs) {
             const int64_t iterMs = msSince(iterStart);
-            if (msSince(start) + iterMs * 3 >= limits.softMs) break;
+            if (msSince(start) + iterMs * 3 >= *limits.softMs) break;
         }
     }
  

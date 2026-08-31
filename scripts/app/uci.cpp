@@ -1,7 +1,6 @@
-#include "uci.hpp"
-#include "game.hpp"
 #include "movegen.hpp"
 #include "notation.hpp"
+#include "search.hpp"
 #include <iostream>
 #include <cstdio>
 #include <cstdlib>
@@ -17,7 +16,7 @@ namespace {
 constexpr char ENGINE_NAME[] = "Cera";
 constexpr char ENGINE_AUTHOR[] = "Isaac Honeyman";
 
-bool debugInfo = true;
+bool debugInfo = false;
 
 // UCI reports mate in MOVES, signed, not plies.
 int mateIn(int score) {
@@ -133,46 +132,52 @@ int64_t number(const std::vector<std::string>& t, size_t i) {
 SearchLimits parseGo(const std::vector<std::string>& t, PieceColour us) {
     int64_t wtime = 0, btime = 0, winc = 0, binc = 0, movetime = 0, movestogo = 0;
     int depth = 0;
-    bool infinite = false;
+    bool clockGiven = false;   // "no clock sent" and "clock at zero" differ
 
     for (size_t i = 1; i < t.size(); ++i) {
-        if      (t[i] == "wtime")     wtime     = number(t, ++i);
-        else if (t[i] == "btime")     btime     = number(t, ++i);
+        if      (t[i] == "wtime")   { wtime = number(t, ++i); clockGiven = true; }
+        else if (t[i] == "btime")   { btime = number(t, ++i); clockGiven = true; }
         else if (t[i] == "winc")      winc      = number(t, ++i);
         else if (t[i] == "binc")      binc      = number(t, ++i);
         else if (t[i] == "movetime")  movetime  = number(t, ++i);
         else if (t[i] == "movestogo") movestogo = number(t, ++i);
         else if (t[i] == "depth")     depth     = int(number(t, ++i));
-        else if (t[i] == "infinite")  infinite  = true;
     }
 
     SearchLimits lim;
     if (depth > 0) lim.maxDepth = depth;
-    if (infinite) {
-        if (depth == 0) lim.maxDepth = 10;
-        return lim;                      // no clock, run to maxDepth
-    }
 
     if (movetime > 0) {
         lim.softMs = lim.hardMs = std::max<int64_t>(1, movetime - LAG_OVERHEAD_MS);
         return lim;
     }
 
-    const int64_t left = (us == WHITE) ? wtime : btime;
-    const int64_t inc  = (us == WHITE) ? winc  : binc;
-    if (left <= 0) return lim;                     // no clock info given
+    if (clockGiven) {
+        const int64_t left = (us == WHITE) ? wtime : btime;
+        const int64_t inc  = (us == WHITE) ? winc  : binc;
 
-    const int64_t usable = std::max<int64_t>(1, left - LAG_OVERHEAD_MS);
-    const int64_t base = (movestogo > 0) ? usable / movestogo
-                                         : usable / MOVES_REMAINING + inc * 3 / 4;
+        if (left <= 0) {
+            lim.softMs = lim.hardMs = 1;
+            return lim;
+        }
 
-    // Never commit more than half the remaining clock, however generous the
-    lim.softMs = std::min(base, usable / 2);
-    lim.hardMs = std::min(base * 3, usable / 2);
+        const int64_t usable = std::max<int64_t>(1, left - LAG_OVERHEAD_MS);
+        const int64_t base = (movestogo > 0) ? usable / movestogo
+                                            : usable / MOVES_REMAINING + inc * 3 / 4;
+
+        lim.softMs = std::max<int64_t>(1, std::min(base, usable / 2));
+        lim.hardMs = std::max<int64_t>(1, std::min(base * 3, usable / 2));
+        return lim;
+    }
+
+    // No clock at all. An explicit depth is a deliberate request, so honour it
+    // unbounded; anything else ('go', 'go infinite') would run until 'stop',
+    if (depth > 0) return lim;
+    lim.hardMs = 30'000;
     return lim;
 }
 
-void handleGo(Game& g, Bot& bot, const std::vector<std::string>& t) {
+void handleGo(Game& g, Searcher& searcher, const std::vector<std::string>& t) {
     MoveList legal;
     generateLegal(g.board, legal);
 
@@ -193,11 +198,9 @@ void handleGo(Game& g, Bot& bot, const std::vector<std::string>& t) {
         reported = true;
     };
 
-    const SearchResult r = bot.pick(g, legal, limits);
+    const SearchResult r = searcher.search(g, legal, limits);
     const Move best = (r.move == NO_MOVE) ? legal.moves[0] : r.move;
 
-    // A search aborted inside its first iteration -- or a bot that ignores the
-    // callback -- reports nothing, so the GUI still gets one line.
     if (!reported) {
         printInfo(r, best);
         printDebug(r, best, prevNodes);
@@ -208,7 +211,7 @@ void handleGo(Game& g, Bot& bot, const std::vector<std::string>& t) {
 
 }  // namespace
 
-void uciLoop(Bot& bot) {
+void uciLoop(Searcher& searcher) {
     std::ios::sync_with_stdio(false);
 
     Game g;
@@ -226,12 +229,12 @@ void uciLoop(Bot& bot) {
         } else if (cmd == "isready") {
             std::cout << "readyok" << std::endl;
         } else if (cmd == "ucinewgame") {
-            bot.newGame();
+            searcher.clear();
             g.setFEN(START_FEN);
         } else if (cmd == "position") {
             handlePosition(g, t);
         } else if (cmd == "go") {
-            handleGo(g, bot, t);
+            handleGo(g, searcher, t);
         } else if (cmd == "debug") {
             if (t.size() > 1) debugInfo = (t[1] != "off");
         } else if (cmd == "stop" || cmd == "setoption") {
@@ -243,4 +246,10 @@ void uciLoop(Bot& bot) {
             g.board.printBoard();  // stderr, so it can't corrupt the protocol
         }
     }
+}
+
+int main() {
+    Searcher searcher{};
+    uciLoop(searcher);
+    return 0;
 }

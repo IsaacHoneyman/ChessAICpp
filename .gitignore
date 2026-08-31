@@ -54,3 +54,5 @@ Thumbs.db
 
 # DO NOT REMOVE
 api 
+*.pgn
+*.epd

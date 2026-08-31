@@ -5,12 +5,8 @@
 #include <chrono>
 #include <cstdint>
 #include <functional>
+#include <optional>
 
-inline constexpr int MATE = 30000; // mate given this value (treat kinda like infinity)
-inline constexpr int MATE_THRESHOLD = MATE - MAX_SEARCH_PLY;
-inline constexpr int INF = 32000;
-
-constexpr bool isMateScore(int s) { return s > MATE_THRESHOLD || s < -MATE_THRESHOLD; }
 
 struct SearchResult {
     Move move  = NO_MOVE;
@@ -26,8 +22,8 @@ struct SearchResult {
 
 struct SearchLimits {
     int maxDepth = MAX_SEARCH_PLY;
-    int64_t softMs = 0; // dont start another iteration
-    int64_t hardMs = 0; // must abort midway through iteration
+    std::optional<int64_t> softMs;   
+    std::optional<int64_t> hardMs;
 
     std::function<void(const SearchResult&)> onIteration{};
 };
@@ -35,7 +31,7 @@ struct SearchLimits {
 struct Searcher {
     SearchResult search(Game& g, const MoveList& root, SearchLimits limits);
     SearchResult search(Game& g, const MoveList& root, int depth) {
-        return search(g, root, {depth, 0, 0});
+        return search(g, root, {depth, std::nullopt, std::nullopt, {}});
     }
 
     void clear() { nodes = qnodes = cutoffs = firstCutoffs = 0; seldepth = 0; }
