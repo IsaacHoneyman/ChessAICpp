@@ -92,6 +92,11 @@ void pickNext(MoveList &moves, int scores[], int start) {
     }
 }
 
+bool hasNonPawnMaterial(const Board &b, PieceColour c) {
+    return (b.byColour[c] & (b.byType[KNIGHT] | b.byType[BISHOP] |
+                             b.byType[ROOK]   | b.byType[QUEEN])) != 0;
+}
+
 bool isDraw(const Game &g, int ply) {
     return ply > 0 && (g.board.halfMoveClock >= 100 ||
                        g.history.isRepetition(g.board.zobristHash, g.board.halfMoveClock));
@@ -174,7 +179,7 @@ int Searcher::negamax(Game &g, int depth, int ply, int alpha, int beta, bool all
 
     const bool inCheckNow = inCheck(g.board, g.board.toMove);
 
-    if (allowNmp && !inCheckNow && depth >= 3 && g.board.gamePhase > 0) {
+    if (allowNmp && !inCheckNow && depth >= 3 && hasNonPawnMaterial(g.board, g.board.toMove)) {
         const int eval = evaluate(g.board);
 
         if (eval >= beta) {
