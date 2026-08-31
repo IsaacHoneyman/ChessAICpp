@@ -87,13 +87,27 @@ struct Move {
     constexpr bool operator==(const Move&) const = default;
 };
 
+struct Score {
+    int mg = 0; // middle game pst
+    int eg = 0; // end game pst
+
+    constexpr Score operator+(const Score& o) const { return {mg + o.mg, eg + o.eg}; }
+    constexpr Score operator-(const Score& o) const { return {mg - o.mg, eg - o.eg}; }
+    constexpr Score operator-() const { return {-mg, -eg}; }
+    Score& operator+=(const Score& o) { mg += o.mg; eg += o.eg; return *this; }
+    Score& operator-=(const Score& o) { mg -= o.mg; eg -= o.eg; return *this; }
+    constexpr bool operator==(const Score& o) const = default;
+};
+
 struct MoveUndo {
     Piece captured;
     uint8_t castling;
     uint8_t epSquare;
     uint8_t halfMoveClock;
     uint64_t zobristHash;
-    int32_t pstScore;
+    
+    Score pstScore;
+    int32_t gamePhase;
 };
 
 constexpr Move encodeMove(int from, int to, MoveFlag f) {

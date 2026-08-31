@@ -30,6 +30,7 @@ void Board::setPiece(int square, Piece p) {
     byType[typeOf(p)] |= squareBB(square);
     byColour[colourOf(p)] |= squareBB(square);
     pstScore += PST[p][square];
+    gamePhase += PHASE_WEIGHT[typeOf(p)];
 
 }
 
@@ -42,7 +43,7 @@ void Board::removePiece(int square) {
     byType[typeOf(p)] &= ~squareBB(square);
     byColour[colourOf(p)] &= ~squareBB(square);
     pstScore -= PST[p][square];
-
+    gamePhase -= PHASE_WEIGHT[typeOf(p)];
 }
 
 // --- Output / Notation ---
@@ -221,6 +222,7 @@ void Board::makeMove(Move m, MoveUndo& undo) {
     undo.epSquare = epSquare;
     undo.halfMoveClock = halfMoveClock;
     undo.pstScore = pstScore;
+    undo.gamePhase = gamePhase;
     
     if (epSquare != NO_SQUARE) zobristHash ^= ZOBRIST_KEYS.enPassant[fileOf(epSquare)];
     zobristHash ^= ZOBRIST_KEYS.castling[castling];
@@ -304,4 +306,5 @@ void Board::unmakeMove(Move m, const MoveUndo& undo) {
     epSquare      = undo.epSquare;
     halfMoveClock = undo.halfMoveClock;
     pstScore = undo.pstScore;
+    gamePhase = undo.gamePhase;
 }

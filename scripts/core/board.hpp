@@ -1,6 +1,7 @@
 #pragma once
 #include <cstdint>
 #include <string>
+#include "eval.hpp"
 #include "types.hpp"
 
 struct Board {
@@ -15,7 +16,8 @@ struct Board {
     uint16_t fullMoveNumber; 
     PieceColour toMove;
 
-    int32_t pstScore;
+    Score pstScore;
+    int32_t gamePhase;
 
     uint64_t occupied() const { return byColour[WHITE] | byColour[BLACK]; }
     uint64_t pieces(PieceColour c, PieceType pt) const { return byColour[c] & byType[pt]; }

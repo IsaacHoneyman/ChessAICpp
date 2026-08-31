@@ -10,12 +10,24 @@ namespace {
 
 constexpr int MAX_QUIESCE_PLY = 16; // termination for infinite checks
 
+constexpr std::array<std::array<int, TYPE_SIZE>, TYPE_SIZE> makeMvvLvaTable() {
+    constexpr int VAL[TYPE_SIZE] = {0, 100, 300, 300, 500, 900, 0   };
+    std::array<std::array<int, TYPE_SIZE>, TYPE_SIZE> table{};
+    for (int victim = 1; victim < TYPE_SIZE; ++victim) {
+        for (int attacker = 1; attacker < TYPE_SIZE; ++attacker) {
+            table[victim][attacker] = VAL[victim] * 16 - VAL[attacker];
+        }
+    }
+    return table;
+}
+
+constexpr auto MVV_LVA = makeMvvLvaTable();
+
 // most valuable victim with least valuable attacker
 int captureScore(const Board &b, Move m) {
     const PieceType victim = (m.flag() == EN_PASSANT) ? PAWN : typeOf(b.at(m.to()));
     const PieceType attacker = typeOf(b.at(m.from()));
-    int s = detail::VALUE[victim] * 16 - detail::VALUE[attacker]; // victim more important
-    return s;
+    return MVV_LVA[victim][attacker];
 }
 
 int moveScore(const Board& b, Move m, Move ttMove) {
