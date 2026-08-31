@@ -18,7 +18,8 @@ int captureScore(const Board &b, Move m) {
     return s;
 }
 
-int moveScore(const Board& b, Move m) {
+int moveScore(const Board& b, Move m, Move ttMove) {
+    if (m == ttMove) return 1'000'000;   // best move from a previous search
     if (m.isPromotion() && m.promType() == QUEEN) return 300'000 + (m.isCapture() ? captureScore(b, m) : 0);
     if (m.isCapture())   return 200'000 + captureScore(b, m);
     if (m.isPromotion()) return 100'000;   
@@ -69,7 +70,7 @@ int Searcher::quiesce(Game& g, int alpha, int beta, int ply, int qply) {
     for (int i = 0; i < moves.size(); ++i) {
         if (ic || moves.moves[i].isCapture() || moves.moves[i].isPromotion()) {
             moves.moves[considered] = moves.moves[i];
-            scores[considered] = moveScore(g.board, moves.moves[i]);
+            scores[considered] = moveScore(g.board, moves.moves[i], NO_MOVE);
             ++considered;
         }
     }
@@ -96,6 +97,13 @@ int Searcher::negamax(Game& g, int depth, int ply, int alpha, int beta) {
     if (outOfTime()) return 0; // discard iteration
 
     if (isDraw(g, ply)) return 0;
+
+    const int alphaOrig = alpha;
+    Move ttMove = NO_MOVE;
+    int ttScore = 0;
+    if (ply > 0 && tt.probe(g.board.zobristHash, depth, ply, alpha, beta, ttScore, ttMove))
+        return ttScore;
+
     if (depth <= 0) return quiesce(g, alpha, beta, ply, 1);
 
     MoveList moves;
@@ -104,10 +112,11 @@ int Searcher::negamax(Game& g, int depth, int ply, int alpha, int beta) {
     if (moves.size() == 0) return inCheck(g.board, g.board.toMove) ? -MATE + ply : 0;
 
     int scores[256];
-    for (int i = 0; i < moves.size(); ++i) scores[i] = moveScore(g.board, moves.moves[i]);
+    for (int i = 0; i < moves.size(); ++i) scores[i] = moveScore(g.board, moves.moves[i], ttMove);
 
     MoveUndo undo;
     int best = -INF;
+    Move bestMove = NO_MOVE;
     for (int i = 0; i < moves.size(); ++i) {
         pickNext(moves, scores, i);
         const Move m = moves.moves[i];
@@ -116,16 +125,23 @@ int Searcher::negamax(Game& g, int depth, int ply, int alpha, int beta) {
         const int score = -negamax(g, depth - 1, ply + 1, -beta, -alpha);
         g.undoMove(m, undo);
 
-        if (score > best) best = score;
+        if (score > best) { best = score; bestMove = m; }
         if (score > alpha) alpha = score;
         if (alpha >= beta) { // opponent had better option
             ++cutoffs;
-            if (i == 0) ++firstCutoffs; // best move was tried first: good ordering
+            if (i == 0) ++firstCutoffs; // best move was tried first
             break;
         }
     }
+
+    // Never store a partial result from an aborted iteration 
+    if (!stopped) {
+        const Bound bound = (best <= alphaOrig) ? Bound::UPPER   // failed low
+                          : (best >= beta)      ? Bound::LOWER   // failed high
+                                                : Bound::EXACT;
+        tt.store(g.board.zobristHash, depth, ply, best, bound, bestMove);
+    }
     return best;
-    
 }
 
 int64_t Searcher::msSince(Clock::time_point t) const {
@@ -152,7 +168,7 @@ bool Searcher::outOfTime() {
 SearchResult Searcher::searchRoot(Game& g, int depth) {
     int scores[256];
     for (int i = 0; i < rootMoves.size(); ++i) {
-        scores[i] = moveScore(g.board, rootMoves.moves[i]);
+        scores[i] = moveScore(g.board, rootMoves.moves[i], NO_MOVE);
         if (rootMoves.moves[i] == prevBest) scores[i] = INT_MAX; // marked as best will cut down alpha & beta
     }
     
@@ -223,8 +239,3 @@ SearchResult Searcher::search(Game& g, const MoveList& root, SearchLimits lim) {
     fillStats(best);
     return best;
 }
-
-
-
-
-

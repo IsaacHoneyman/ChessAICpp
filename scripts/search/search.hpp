@@ -1,6 +1,7 @@
 #pragma once
 #include "game.hpp"
 #include "movegen.hpp"
+#include "tt.hpp"
 #include "types.hpp"
 #include <chrono>
 #include <cstdint>
@@ -13,6 +14,7 @@ struct SearchResult {
     int  score = 0;        // centipawns, positive = good for side to move
     int  depth = 0;
     int  seldepth = 0;     // deepest ply reached, quiescence included
+
     uint64_t nodes = 0;
     uint64_t qnodes = 0;   // subset of nodes spent in quiescence
     uint64_t cutoffs = 0;      // beta cutoffs taken
@@ -34,7 +36,12 @@ struct Searcher {
         return search(g, root, {depth, std::nullopt, std::nullopt, {}});
     }
 
-    void clear() { nodes = qnodes = cutoffs = firstCutoffs = 0; seldepth = 0; }
+    void clear() { 
+        nodes = qnodes = cutoffs = firstCutoffs = 0; 
+        seldepth = 0;
+        tt.clear(); 
+    }
+    void setHashSize(size_t mb) { tt.resize(mb); }
 
 private:
     using Clock = std::chrono::steady_clock;
@@ -46,6 +53,8 @@ private:
     int64_t msSince(Clock::time_point t) const;
     bool outOfTime(); // hard limit, 2048
     void fillStats(SearchResult& r); // copy the counters into a result
+
+    TranspositionTable tt;
 
     uint64_t nodes = 0;
     uint64_t qnodes = 0;
