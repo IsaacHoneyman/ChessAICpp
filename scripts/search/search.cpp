@@ -30,12 +30,25 @@ int captureScore(const Board &b, Move m) {
     return MVV_LVA[victim][attacker];
 }
 
-int moveScore(const Board& b, Move m, Move ttMove) {
-    if (m == ttMove) return 1'000'000;   // best move from a previous search
-    if (m.isPromotion() && m.promType() == QUEEN) return 300'000 + (m.isCapture() ? captureScore(b, m) : 0);
-    if (m.isCapture())   return 200'000 + captureScore(b, m);
-    if (m.isPromotion()) return 100'000;   
-    return 0; // killers, history go here
+constexpr int SCORE_TT = 600'000;
+constexpr int SCORE_Q_PROMO = 500'000;
+constexpr int SCORE_CAPTURE = 400'000;
+constexpr int SCORE_KILLER_1 = 300'000;
+constexpr int SCORE_KILLER_2 = 200'000;
+constexpr int SCORE_UNDERPROMO = 100'000;
+constexpr int HISTORY_MAX = 90'000; // stay under promo
+
+int moveScore(const Board& b, Move m, Move ttMove, const Move* killers, const int (*history)[64]) {
+    if (m == ttMove) return SCORE_TT;   // best move from a previous search
+    if (m.isPromotion() && m.promType() == QUEEN) 
+        return SCORE_Q_PROMO + (m.isCapture() ? captureScore(b, m) : 0);
+    if (m.isCapture())   return SCORE_CAPTURE + captureScore(b, m);
+    if (killers) {
+        if (m == killers[0]) return SCORE_KILLER_1;
+        if (m == killers[1]) return SCORE_KILLER_2;
+    }
+    if (m.isPromotion()) return SCORE_UNDERPROMO;   
+    return history ? history[b.at(m.from())][m.to()] : 0;
 }
 
 // select a move at a time, sorting tail is wasted work
@@ -82,7 +95,7 @@ int Searcher::quiesce(Game& g, int alpha, int beta, int ply, int qply) {
     for (int i = 0; i < moves.size(); ++i) {
         if (ic || moves.moves[i].isCapture() || moves.moves[i].isPromotion()) {
             moves.moves[considered] = moves.moves[i];
-            scores[considered] = moveScore(g.board, moves.moves[i], NO_MOVE);
+            scores[considered] = moveScore(g.board, moves.moves[i], NO_MOVE, nullptr, nullptr);
             ++considered;
         }
     }
@@ -124,7 +137,7 @@ int Searcher::negamax(Game& g, int depth, int ply, int alpha, int beta) {
     if (moves.size() == 0) return inCheck(g.board, g.board.toMove) ? -MATE + ply : 0;
 
     int scores[256];
-    for (int i = 0; i < moves.size(); ++i) scores[i] = moveScore(g.board, moves.moves[i], ttMove);
+    for (int i = 0; i < moves.size(); ++i) scores[i] = moveScore(g.board, moves.moves[i], ttMove, killers[ply], history);
 
     MoveUndo undo;
     int best = -INF;
@@ -142,6 +155,16 @@ int Searcher::negamax(Game& g, int depth, int ply, int alpha, int beta) {
         if (alpha >= beta) { // opponent had better option
             ++cutoffs;
             if (i == 0) ++firstCutoffs; // best move was tried first
+
+            if (!m.isCapture() && !m.isPromotion()) {
+                const Piece p = g.board.at(m.from());   
+                history[p][m.to()] += depth * depth;
+                if (history[p][m.to()] > HISTORY_MAX) ageHistory();
+                if (!(m == killers[ply][0])) {
+                    killers[ply][1] = killers[ply][0];
+                    killers[ply][0] = m;
+                }
+            }
             break;
         }
     }
@@ -154,6 +177,12 @@ int Searcher::negamax(Game& g, int depth, int ply, int alpha, int beta) {
         tt.store(g.board.zobristHash, depth, ply, best, bound, bestMove);
     }
     return best;
+}
+
+void Searcher::ageHistory() {
+    for (auto& row : history) {
+        for (auto& v : row) v /= 2;
+    }
 }
 
 int64_t Searcher::msSince(Clock::time_point t) const {
@@ -180,7 +209,7 @@ bool Searcher::outOfTime() {
 SearchResult Searcher::searchRoot(Game& g, int depth) {
     int scores[256];
     for (int i = 0; i < rootMoves.size(); ++i) {
-        scores[i] = moveScore(g.board, rootMoves.moves[i], NO_MOVE);
+        scores[i] = moveScore(g.board, rootMoves.moves[i], NO_MOVE, nullptr, nullptr);
         if (rootMoves.moves[i] == prevBest) scores[i] = INT_MAX; // marked as best will cut down alpha & beta
     }
     
@@ -221,6 +250,7 @@ SearchResult Searcher::search(Game& g, const MoveList& root, SearchLimits lim) {
     start = Clock::now();
     prevBest = NO_MOVE;
     rootMoves = root;
+    for (auto& k : killers) { k[0] = NO_MOVE; k[1] = NO_MOVE; }
  
     SearchResult best;
     if (root.size() == 0) return best;  // mated or stalemated

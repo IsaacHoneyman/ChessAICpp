@@ -40,6 +40,7 @@ struct Searcher {
         nodes = qnodes = cutoffs = firstCutoffs = 0; 
         seldepth = 0;
         tt.clear(); 
+        for (auto& row : history) for (auto& v : row) v = 0;
     }
     void setHashSize(size_t mb) { tt.resize(mb); }
 
@@ -49,6 +50,7 @@ private:
     SearchResult searchRoot(Game& g, int depth);
     int negamax(Game&, int depth, int ply, int alpha, int beta);
     int quiesce(Game&, int alpha, int beta, int ply, int qply);
+    void ageHistory();
 
     int64_t msSince(Clock::time_point t) const;
     bool outOfTime(); // hard limit, 2048
@@ -64,6 +66,9 @@ private:
     bool stopped = false;
     Clock::time_point start{};
     SearchLimits limits{};
+
+    Move killers[MAX_SEARCH_PLY][2]{}; // two quite moves per ply that caused a beta cutoff, same refute 
+    int history[15][64]{}; // moves like this recently have worked, aged overtime
 
     MoveList rootMoves{};
     Move prevBest = NO_MOVE;
