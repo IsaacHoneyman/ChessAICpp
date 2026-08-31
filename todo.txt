@@ -4,12 +4,9 @@ checkers used properly instead of as a bool + free checkmate detection
 pinned rays instead of make/unmake for pinned piecesstaged generationbulk pawn generation
 
 --- Evaluation ---
-Second table and transition between
 
---- Search ---
-Transposition table
-Killer moves 
-History heuristic
+--- SearMR ---
+Improved LMR
 
 --- Dynamic Iteration ---
 Best move changed at the last iteration → extend the soft limit

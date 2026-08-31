@@ -38,6 +38,17 @@ constexpr int SCORE_KILLER_2 = 200'000;
 constexpr int SCORE_UNDERPROMO = 100'000;
 constexpr int HISTORY_MAX = 90'000; // stay under promo
 
+// --- Late move reductions ---
+constexpr int LMR_MIN_DEPTH = 3;  // below this there is nothing to reduce
+constexpr int LMR_MIN_MOVE  = 3;  // first three moves always get full depth
+
+int reduction(int depth, int moveIndex) {
+    int r = 1;
+    if (moveIndex >= 6) ++r;      
+    if (depth >= 6) ++r;
+    return r;
+}
+
 int moveScore(const Board& b, Move m, Move ttMove, const Move* killers, const int (*history)[64]) {
     if (m == ttMove) return SCORE_TT;   // best move from a previous search
     if (m.isPromotion() && m.promType() == QUEEN) 
@@ -134,7 +145,8 @@ int Searcher::negamax(Game& g, int depth, int ply, int alpha, int beta) {
     MoveList moves;
     generateLegal(g.board, moves);
 
-    if (moves.size() == 0) return inCheck(g.board, g.board.toMove) ? -MATE + ply : 0;
+    const bool inCheckNow = inCheck(g.board, g.board.toMove);
+    if (moves.size() == 0) return inCheckNow ? -MATE + ply : 0;
 
     int scores[256];
     for (int i = 0; i < moves.size(); ++i) scores[i] = moveScore(g.board, moves.moves[i], ttMove, killers[ply], history);
@@ -145,9 +157,22 @@ int Searcher::negamax(Game& g, int depth, int ply, int alpha, int beta) {
     for (int i = 0; i < moves.size(); ++i) {
         pickNext(moves, scores, i);
         const Move m = moves.moves[i];
+        const bool quiet = !m.isCapture() && !m.isPromotion();
 
         g.makeMove(m, undo);
-        const int score = -negamax(g, depth - 1, ply + 1, -beta, -alpha);
+
+        int score;
+        if (quiet && !inCheckNow && depth >= LMR_MIN_DEPTH && i >= LMR_MIN_MOVE) { // we try reduced depth
+            const int r = reduction(depth, i);
+            score = -negamax(g, depth - 1 - r, ply + 1, -alpha - 1, -alpha);
+
+            if (score > alpha)
+                score = -negamax(g, depth - 1, ply + 1, -beta, -alpha);
+        } 
+        else {
+            score = -negamax(g, depth - 1, ply + 1, -beta, -alpha);
+        }
+
         g.undoMove(m, undo);
 
         if (score > best) { best = score; bestMove = m; }
@@ -156,8 +181,8 @@ int Searcher::negamax(Game& g, int depth, int ply, int alpha, int beta) {
             ++cutoffs;
             if (i == 0) ++firstCutoffs; // best move was tried first
 
-            if (!m.isCapture() && !m.isPromotion()) {
-                const Piece p = g.board.at(m.from());   
+            if (quiet) {
+                const Piece p = g.board.at(m.from());
                 history[p][m.to()] += depth * depth;
                 if (history[p][m.to()] > HISTORY_MAX) ageHistory();
                 if (!(m == killers[ply][0])) {
