@@ -15,15 +15,19 @@ struct GenContext {
     uint64_t theirs;
     uint64_t occupied;
     uint64_t notOurs;
+    uint64_t targets;   // squares a piece may land on
+    bool capturesOnly;
 
-    explicit GenContext(const Board& b)
+    GenContext(const Board& b, GenType type)
     : board(b),
         us(b.toMove),
         them(other(b.toMove)),
         ours(b.byColour[us]),
         theirs(b.byColour[them]),
         occupied(ours | theirs),
-        notOurs(~ours) 
+        notOurs(~ours),
+        targets(type == GenType::CAPTURES ? theirs : notOurs),
+        capturesOnly(type == GenType::CAPTURES)
     {}
 };
 
@@ -56,45 +60,87 @@ uint64_t computePinned(const Board& b, PieceColour us, int kingSq) {
     return pinned;
 }
 
-void addPawnMove(MoveList& moves, int from, int to, bool capture, int promoRank) {
-    if (rankOf(to) == promoRank) {
-        moves.push_back(encodeMove(from, to, capture ? PROM_KNIGHT_CAP : PROM_KNIGHT));
-        moves.push_back(encodeMove(from, to, capture ? PROM_BISHOP_CAP : PROM_BISHOP));
-        moves.push_back(encodeMove(from, to, capture ? PROM_ROOK_CAP   : PROM_ROOK));
-        moves.push_back(encodeMove(from, to, capture ? PROM_QUEEN_CAP  : PROM_QUEEN));
-    } else {
-        moves.push_back(encodeMove(from, to, capture ? CAPTURE : QUIET));
-    }
-}
-
+// Set-wise pawn generation: shift the whole pawn set at once rather than looping
 void generatePawnMoves(const GenContext& c, MoveList& moves) {
-    const int forward   = (c.us == WHITE) ? 8 : -8;
-    const int startRank = (c.us == WHITE) ? 1 : 6;
-    const int promoRank = (c.us == WHITE) ? 7 : 0;
+    const bool white = (c.us == WHITE);
+    const uint64_t pawns = c.board.byType[PAWN] & c.ours;
+    const uint64_t empty = ~c.occupied;
 
-    uint64_t pawns = c.board.byType[PAWN] & c.ours;
-    while (pawns) {
-        int from = popLsb(pawns);
+    const uint64_t promoRank  = white ? RANK_8 : RANK_1;
+    const uint64_t doubleRank = white ? RANK_3 : RANK_6;
 
-        int one = from + forward;
-        if (!(c.occupied & squareBB(one))) {
-            addPawnMove(moves, from, one, false, promoRank);
+    const int up   = white ?  8 : -8;   // single push
+    const int upE  = white ?  9 : -7;   // capture toward the h-file
+    const int upW  = white ?  7 : -9;   // capture toward the a-file
 
-            if (rankOf(from) == startRank) {
-                int two = one + forward;
-                if (!(c.occupied & squareBB(two)))
-                    moves.push_back(encodeMove(from, two, DOUBLE_PUSH));
-            }
+    auto shiftUp = [&](uint64_t bb) { return white ? bb << 8 : bb >> 8; };
+    auto shiftE  = [&](uint64_t bb) { return white ? (bb & ~FILE_H) << 9 : (bb & ~FILE_H) >> 7; };
+    auto shiftW  = [&](uint64_t bb) { return white ? (bb & ~FILE_A) << 7 : (bb & ~FILE_A) >> 9; };
+
+    // quite pushes
+    if (!c.capturesOnly) {
+        uint64_t single = shiftUp(pawns) & empty & ~promoRank;
+        uint64_t dbl    = shiftUp(shiftUp(pawns) & empty & doubleRank) & empty;
+
+        while (single) {
+            const int to = popLsb(single);
+            moves.push_back(encodeMove(to - up, to, QUIET));
+        }
+        while (dbl) {
+            const int to = popLsb(dbl);
+            moves.push_back(encodeMove(to - 2 * up, to, DOUBLE_PUSH));
+        }
+    }
+
+    // captures
+    uint64_t capE = shiftE(pawns) & c.theirs & ~promoRank;
+    while (capE) {
+        const int to = popLsb(capE);
+        moves.push_back(encodeMove(to - upE, to, CAPTURE));
+    }
+
+    uint64_t capW = shiftW(pawns) & c.theirs & ~promoRank;
+    while (capW) {
+        const int to = popLsb(capW);
+        moves.push_back(encodeMove(to - upW, to, CAPTURE));
+    }
+
+    // promos
+    const uint64_t promoters = pawns & (white ? RANK_7 : RANK_2);
+    if (promoters) {
+        uint64_t push = shiftUp(promoters) & empty;
+        while (push) {
+            const int to = popLsb(push), from = to - up;
+            moves.push_back(encodeMove(from, to, PROM_KNIGHT));
+            moves.push_back(encodeMove(from, to, PROM_BISHOP));
+            moves.push_back(encodeMove(from, to, PROM_ROOK));
+            moves.push_back(encodeMove(from, to, PROM_QUEEN));
         }
 
-        uint64_t attacks = PAWN_ATTACKS[c.us][from];
-        uint64_t caps = attacks & c.theirs;
-        while (caps) {
-            int to = popLsb(caps);
-            addPawnMove(moves, from, to, true, promoRank);
+        uint64_t pcE = shiftE(promoters) & c.theirs;
+        while (pcE) {
+            const int to = popLsb(pcE), from = to - upE;
+            moves.push_back(encodeMove(from, to, PROM_KNIGHT_CAP));
+            moves.push_back(encodeMove(from, to, PROM_BISHOP_CAP));
+            moves.push_back(encodeMove(from, to, PROM_ROOK_CAP));
+            moves.push_back(encodeMove(from, to, PROM_QUEEN_CAP));
         }
-        if (c.board.epSquare != NO_SQUARE && (attacks & squareBB(c.board.epSquare)))
-            moves.push_back(encodeMove(from, c.board.epSquare, EN_PASSANT));
+
+        uint64_t pcW = shiftW(promoters) & c.theirs;
+        while (pcW) {
+            const int to = popLsb(pcW), from = to - upW;
+            moves.push_back(encodeMove(from, to, PROM_KNIGHT_CAP));
+            moves.push_back(encodeMove(from, to, PROM_BISHOP_CAP));
+            moves.push_back(encodeMove(from, to, PROM_ROOK_CAP));
+            moves.push_back(encodeMove(from, to, PROM_QUEEN_CAP));
+        }
+    }
+
+    // --- en passant ---
+    if (c.board.epSquare != NO_SQUARE) {
+        uint64_t eps = PAWN_ATTACKS[c.them][c.board.epSquare] & pawns;
+        while (eps)
+            moves.push_back(encodeMove(popLsb(eps), c.board.epSquare, EN_PASSANT));
     }
 }
 
@@ -102,7 +148,7 @@ void generateKnightMoves(const GenContext& c, MoveList& moves) {
     uint64_t knights = c.board.pieces(c.us, KNIGHT);
     while (knights) {
         int from = popLsb(knights);
-        uint64_t targets = KNIGHT_ATTACKS[from] & c.notOurs;
+        uint64_t targets = KNIGHT_ATTACKS[from] & c.targets;
         while (targets) {
             int to = popLsb(targets);
             moves.push_back(encodeMove(from, to,
@@ -113,7 +159,7 @@ void generateKnightMoves(const GenContext& c, MoveList& moves) {
 
 void generateKingMoves(const GenContext& c, MoveList& moves) {
     int from = lsb(c.board.pieces(c.us, KING)); // only one king
-    uint64_t targets = KING_ATTACKS[from] & c.notOurs;
+    uint64_t targets = KING_ATTACKS[from] & c.targets;
     while (targets) {
         int to = popLsb(targets);
         moves.push_back(encodeMove(from, to,
@@ -121,6 +167,9 @@ void generateKingMoves(const GenContext& c, MoveList& moves) {
     }
 
     // --- castling ---
+    // never capture so can skip.
+    if (c.capturesOnly) return;
+
     const int rank           = (c.us == WHITE) ? 0 : 7;
     const uint8_t kingRight  = (c.us == WHITE) ? WHITE_OO  : BLACK_OO;
     const uint8_t queenRight = (c.us == WHITE) ? WHITE_OOO : BLACK_OOO;
@@ -152,7 +201,7 @@ void generateSliderMoves(const GenContext& c, MoveList& moves) {
     uint64_t diagonal = (c.board.byType[BISHOP] | c.board.byType[QUEEN]) & c.ours;
     while (diagonal) {
         int from = popLsb(diagonal);
-        uint64_t targets = bishopAttacks(from, c.occupied) & c.notOurs;
+        uint64_t targets = bishopAttacks(from, c.occupied) & c.targets;
         while (targets) {
             int to = popLsb(targets);
             moves.push_back(encodeMove(from, to,
@@ -163,7 +212,7 @@ void generateSliderMoves(const GenContext& c, MoveList& moves) {
     uint64_t straight = (c.board.byType[ROOK] | c.board.byType[QUEEN]) & c.ours;
     while (straight) {
         int from = popLsb(straight);
-        uint64_t targets = rookAttacks(from, c.occupied) & c.notOurs;
+        uint64_t targets = rookAttacks(from, c.occupied) & c.targets;
         while (targets) {
             int to = popLsb(targets);
             moves.push_back(encodeMove(from, to,
@@ -207,23 +256,29 @@ GameState getState(const Board& board, const MoveList& moves, const PositionHist
 }
 
 // all legal moves, ignores if king in check
-void generatePseudoLegal(const Board& board, MoveList& moves) {
-    GenContext c(board);
+void generatePseudoLegal(const Board& board, MoveList& moves, GenType type) {
+    GenContext c(board, type);
     generatePawnMoves(c, moves);
     generateKingMoves(c, moves);
     generateSliderMoves(c, moves);
     generateKnightMoves(c, moves);
 }
 
-void generateLegal(Board& board, MoveList& moves) {
+void generateLegal(Board& board, MoveList& moves, GenType type) {
     moves.count = 0;
-    MoveList pseudo;
-    generatePseudoLegal(board, pseudo);
 
     const PieceColour us = board.toMove;
     const int kingSq = lsb(board.pieces(us, KING));
     const uint64_t checkers = computeCheckers(board, us, kingSq);
-    const uint64_t pinned   = computePinned(board, us, kingSq);
+
+    // Evasions include quiet blocks and king moves to empty squares, so a
+    // captures-only list would be incomplete and could look like mate.
+    if (checkers) type = GenType::ALL;
+
+    MoveList pseudo;
+    generatePseudoLegal(board, pseudo, type);
+
+    const uint64_t pinned = computePinned(board, us, kingSq);
 
     MoveUndo undo;
     for (Move m : pseudo) {
@@ -240,6 +295,4 @@ void generateLegal(Board& board, MoveList& moves) {
             moves.push_back(m);
         board.unmakeMove(m, undo);
     }
-
-
 }

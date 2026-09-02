@@ -17,8 +17,10 @@ struct MoveList {
 
 enum class GameState { ONGOING, CHECKMATE, STALEMATE, FIFTYMOVE, INSUFFICIENT, REPETITION };
 
-void generatePseudoLegal(const Board& board, MoveList& moves);
-void generateLegal(Board& board, MoveList& moves);
+enum class GenType { ALL, CAPTURES }; // captures -> captures, enpassant and promotions
+
+void generatePseudoLegal(const Board& board, MoveList& moves, GenType type = GenType::ALL);
+void generateLegal(Board& board, MoveList& moves, GenType type = GenType::ALL);
 
 bool inCheck(const Board& board, PieceColour mover);
 GameState getState(const Board& board, const MoveList& moves, const PositionHistory& history);

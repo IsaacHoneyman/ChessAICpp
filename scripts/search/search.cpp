@@ -11,17 +11,17 @@ namespace {
 
 constexpr int MAX_QUIESCE_PLY = 16; // termination for infinite checks
 
+constexpr int PIECE_VALUE[TYPE_SIZE] = {0, 100, 300, 300, 500, 900, 0};
+
 constexpr std::array<std::array<int, TYPE_SIZE>, TYPE_SIZE> makeMvvLvaTable() {
-    constexpr int VAL[TYPE_SIZE] = {0, 100, 300, 300, 500, 900, 0};
     std::array<std::array<int, TYPE_SIZE>, TYPE_SIZE> table{};
     for (int victim = 1; victim < TYPE_SIZE; ++victim) {
         for (int attacker = 1; attacker < TYPE_SIZE; ++attacker) {
-            table[victim][attacker] = VAL[victim] * 16 - VAL[attacker];
+            table[victim][attacker] = PIECE_VALUE[victim] * 16 - PIECE_VALUE[attacker];
         }
     }
     return table;
 }
-
 constexpr auto MVV_LVA = makeMvvLvaTable();
 
 // most valuable victim with least valuable attacker
@@ -31,6 +31,16 @@ int captureScore(const Board &b, Move m) {
     return MVV_LVA[victim][attacker];
 }
 
+// optimistic material swing of a capture or promotion
+int moveGain(const Board &b, Move m) {
+    int gain = 0;
+    if (m.flag() == EN_PASSANT)  gain = PIECE_VALUE[PAWN];
+    else if (m.isCapture())      gain = PIECE_VALUE[typeOf(b.at(m.to()))];
+    if (m.isPromotion())         gain += PIECE_VALUE[m.promType()] - PIECE_VALUE[PAWN];
+    return gain;
+}
+
+// -- Move ordering ---
 constexpr int SCORE_TT = 600'000;
 constexpr int SCORE_Q_PROMO = 500'000;
 constexpr int SCORE_CAPTURE = 400'000;
@@ -46,6 +56,9 @@ constexpr int LMR_MIN_MOVE = 3;  // first three moves always get full depth
 // --- RFP ---
 constexpr int RFP_MAX_DEPTH = 6;
 constexpr int RFP_MARGIN    = 80;
+
+// --- Delta pruning ---
+constexpr int DELTA_MARGIN = 200;
 
 std::array<std::array<int, 64>, 64> LMR_TABLE{};
 
@@ -118,10 +131,16 @@ int Searcher::quiesce(Game &g, int alpha, int beta, int ply, int qply) {
         return 0; // discard iteration
 
     const bool ic = inCheck(g.board, g.board.toMove);
+    int stand = -INF;
     if (!ic) { // assume capture can be declined
-        const int stand = evaluate(g.board);
+        stand = evaluate(g.board);
         if (stand >= beta)
             return stand; // opponent wont let us get here
+
+        // even winning a queen for free can't reach alpha
+        if (stand + PIECE_VALUE[QUEEN] + DELTA_MARGIN < alpha)
+            return stand;
+
         if (stand > alpha)
             alpha = stand; // new best move found
     }
@@ -130,26 +149,22 @@ int Searcher::quiesce(Game &g, int alpha, int beta, int ply, int qply) {
         return evaluate(g.board);
 
     MoveList moves;
-    generateLegal(g.board, moves);
+    generateLegal(g.board, moves, GenType::CAPTURES);
 
-    if (moves.size() == 0)
-        return ic ? -MATE + ply : 0; // mate or stalemate
+    if (ic && moves.size() == 0)
+        return -MATE + ply;
 
     int scores[256];
-    int considered = 0;
-    for (int i = 0; i < moves.size(); ++i) {
-        if (ic || moves.moves[i].isCapture() || moves.moves[i].isPromotion()) {
-            moves.moves[considered] = moves.moves[i];
-            scores[considered] = moveScore(g.board, moves.moves[i], NO_MOVE, nullptr, nullptr);
-            ++considered;
-        }
-    }
-    moves.count = considered;
+    for (int i = 0; i < moves.size(); ++i)
+        scores[i] = moveScore(g.board, moves.moves[i], NO_MOVE, nullptr, nullptr);
 
     MoveUndo undo;
     for (int i = 0; i < moves.size(); ++i) {
         pickNext(moves, scores, i);
         const Move m = moves.moves[i];
+
+        if (!ic && stand + moveGain(g.board, m) + DELTA_MARGIN < alpha)
+            continue; // cannot possibly raise alpha
 
         g.makeMove(m, undo);
         const int score = -quiesce(g, -beta, -alpha, ply + 1, qply + 1);
