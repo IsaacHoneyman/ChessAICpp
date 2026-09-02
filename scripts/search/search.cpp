@@ -43,9 +43,14 @@ constexpr int HISTORY_MAX = 90'000; // stay under promo
 constexpr int LMR_MIN_DEPTH = 3; // below this there is nothing to reduce
 constexpr int LMR_MIN_MOVE = 3;  // first three moves always get full depth
 
+// --- RFP ---
+constexpr int RFP_MAX_DEPTH = 6;
+constexpr int RFP_MARGIN    = 80;
+
 std::array<std::array<int, 64>, 64> LMR_TABLE{};
 
-bool initLmrTable() { // not constant expr as std::log can't be done at compile time, would work in c++ 26
+bool initLmrTable() { // not constant expr as std::log can't be done at compile time, would work in
+                      // c++ 26
     for (int d = 1; d < 64; ++d) {
         for (int m = 1; m < 64; ++m) {
             // Standard logarithmic scaling constants: base 0.75, divisor 2.25
@@ -93,8 +98,8 @@ void pickNext(MoveList &moves, int scores[], int start) {
 }
 
 bool hasNonPawnMaterial(const Board &b, PieceColour c) {
-    return (b.byColour[c] & (b.byType[KNIGHT] | b.byType[BISHOP] |
-                             b.byType[ROOK]   | b.byType[QUEEN])) != 0;
+    return (b.byColour[c] &
+            (b.byType[KNIGHT] | b.byType[BISHOP] | b.byType[ROOK] | b.byType[QUEEN])) != 0;
 }
 
 bool isDraw(const Game &g, int ply) {
@@ -178,24 +183,26 @@ int Searcher::negamax(Game &g, int depth, int ply, int alpha, int beta, bool all
         return quiesce(g, alpha, beta, ply, 1);
 
     const bool inCheckNow = inCheck(g.board, g.board.toMove);
+    const bool isPv = beta - alpha > 1;
 
-    if (allowNmp && !inCheckNow && depth >= 3 && hasNonPawnMaterial(g.board, g.board.toMove)) {
-        const int eval = evaluate(g.board);
+    const int staticEval = inCheckNow ? 0 : evaluate(g.board);
 
-        if (eval >= beta) {
-            MoveUndo nullUndo;
-            g.board.makeNullMove(nullUndo);
-            int R = (3 + depth / 6) + (eval - beta > 200 ? 1 : 0);
-            const int nullScore = -negamax(g, std::max(0, depth - R), ply + 1, -beta, -beta + 1, false);
-            g.board.unmakeNullMove(nullUndo);
+    if (!isPv && !inCheckNow && depth <= RFP_MAX_DEPTH && !isMateScore(beta) &&
+        staticEval - RFP_MARGIN * depth >= beta)
+        return staticEval;
 
-            if (stopped)
-                return 0;
+    if (allowNmp && !isPv && !inCheckNow && depth >= 3 &&
+        hasNonPawnMaterial(g.board, g.board.toMove) && staticEval >= beta) {
+        MoveUndo nullUndo;
+        g.board.makeNullMove(nullUndo);
+        int R = (3 + depth / 6) + (staticEval - beta > 200 ? 1 : 0);
+        const int nullScore = -negamax(g, std::max(0, depth - R), ply + 1, -beta, -beta + 1, false);
+        g.board.unmakeNullMove(nullUndo);
 
-            if (nullScore >= beta) {
-                return nullScore >= MATE_THRESHOLD ? beta : nullScore;
-            }
-        }
+        if (stopped)
+            return 0;
+        if (nullScore >= beta)
+            return nullScore >= MATE_THRESHOLD ? beta : nullScore;
     }
 
     MoveList moves;
@@ -219,15 +226,20 @@ int Searcher::negamax(Game &g, int depth, int ply, int alpha, int beta, bool all
         g.makeMove(m, undo);
 
         int score;
-        if (quiet && !inCheckNow && depth >= LMR_MIN_DEPTH &&
-            i >= LMR_MIN_MOVE) { // we try reduced depth
-            const int r = reduction(depth, i);
+        if (i == 0) {
+            score = -negamax(g, depth - 1, ply + 1, -beta, -alpha);
+        } else {
+            int r = 0;
+            if (quiet && !inCheckNow && depth >= LMR_MIN_DEPTH && i >= LMR_MIN_MOVE)
+                r = reduction(depth, i);
+
             score = -negamax(g, depth - 1 - r, ply + 1, -alpha - 1, -alpha);
 
-            if (score > alpha)
+            if (r && score > alpha) // reduction was too optimistic, redo at full depth
+                score = -negamax(g, depth - 1, ply + 1, -alpha - 1, -alpha);
+
+            if (score > alpha && score < beta) // null window too narrow, need a real score
                 score = -negamax(g, depth - 1, ply + 1, -beta, -alpha);
-        } else {
-            score = -negamax(g, depth - 1, ply + 1, -beta, -alpha);
         }
 
         g.undoMove(m, undo);
@@ -319,7 +331,14 @@ SearchResult Searcher::searchRoot(Game &g, int depth) {
         const Move m = rootMoves.moves[i];
 
         g.makeMove(m, undo);
-        const int score = -negamax(g, depth - 1, 1, -INF, -alpha);
+        int score;
+        if (i == 0) {
+            score = -negamax(g, depth - 1, 1, -INF, -alpha);
+        } else {
+            score = -negamax(g, depth - 1, 1, -alpha - 1, -alpha);
+            if (score > alpha)
+                score = -negamax(g, depth - 1, 1, -INF, -alpha);
+        }
         g.undoMove(m, undo);
 
         if (stopped)
